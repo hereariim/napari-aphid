@@ -1,0 +1,48 @@
+name: napari-aphid
+display_name: Aphid
+contributions:
+  commands:
+    - id: napari-aphid.get_reader
+      python_name: napari_aphid._reader:napari_get_reader
+      title: Open data with Aphid
+    - id: napari-aphid.write_multiple
+      python_name: napari_aphid._writer:write_multiple
+      title: Save multi-layer data with Aphid
+    - id: napari-aphid.write_single_image
+      python_name: napari_aphid._writer:write_single_image
+      title: Save image data with Aphid
+    - id: napari-aphid.make_sample_data
+      python_name: napari_aphid._sample_data:make_sample_data
+      title: Load sample data from Aphid
+    - id: napari-aphid.make_qwidget
+      python_name: napari_aphid._widget:ExampleQWidget
+      title: Make example QWidget
+    - id: napari-aphid.make_magic_widget
+      python_name: napari_aphid._widget:example_magic_widget
+      title: Make example magic widget
+    - id: napari-aphid.make_func_widget
+      python_name: napari_aphid._widget:example_function_widget
+      title: Make example function widget
+  readers:
+    - command: napari-aphid.get_reader
+      accepts_directories: false
+      filename_patterns: ['*.npy']
+  writers:
+    - command: napari-aphid.write_multiple
+      layer_types: ['image*','labels*']
+      filename_extensions: []
+    - command: napari-aphid.write_single_image
+      layer_types: ['image']
+      filename_extensions: ['.npy']
+  sample_data:
+    - command: napari-aphid.make_sample_data
+      display_name: Aphid
+      key: unique_id.1
+  widgets:
+    - command: napari-aphid.make_qwidget
+      display_name: Example QWidget
+    - command: napari-aphid.make_magic_widget
+      display_name: Example Magic Widget
+    - command: napari-aphid.make_func_widget
+      autogenerate: true
+      display_name: Example Function Widget
