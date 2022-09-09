@@ -60,62 +60,6 @@ from qtpy.QtCore import Qt
 
 zip_dir = tempfile.TemporaryDirectory()
 
-def function_central(filepath):
-    
-    path_image = str(filepath).replace('\\','/')
-  
-    donner = '--raw_data="'+path_image+'"'
-    output_dir = tempfile.TemporaryDirectory()
-    recevoir = '--output_filename_format="'+os.path.join(output_dir.name,path_image.split('/')[-1][:-4])+'_result_type.jpg"'
-    projet_path = '--project="'+os.path.join(paths.get_models_dir(),'segmentation_model.ilp')+'"'
-    
-    subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
-                    '--headless',
-                    projet_path,
-                    '--export_source=Simple Segmentation',
-                    donner,
-                    recevoir])
-    
-    f = os.path.join(output_dir.name,path_image.split('/')[-1][:-4])+'_result_type.png'
-    # imag = np.squeeze(skimage.io.imread(path_image_n))
-    
-    ##################
-    # Traitement Ante
-    ##################
-    print("Traitement Ante")
-    sep=re.compile(r"\\")
-    end=re.compile(r'.(jpg|png)$')
-
-    # CUT = []
-    # for f in output_image:
-    
-    lien=sep.split(f)[0]+r"/Otsu_centrage"
-    name=sep.split(f)[len(sep.split(f))-1] # recuperation du nom du fichier de base
-    name=end.sub(r'',name)
-    img=PIL.Image.open(f)
-    
-    data = np.array(img)
-    tache=np.where(data==255)
-    condide=np.where(data==85)
-    hyphe=np.where(data==170)
-    data[tache]=0
-    data[hyphe]=1
-    data[condide]=1
-
-    labels_mask = measure.label(data, background=0) # Solution venant de stackoverflow, Mesure les differents elements                       
-    regions = measure.regionprops(labels_mask)
-    regions.sort(key=lambda x: x.area, reverse=True) 
-    if len(regions) > 1: #On mets toutes les regions qui ne sont la plus grande en back ground
-        for rg in regions[1:]:          
-            labels_mask[rg.coords[:,0], rg.coords[:,1]] = 0
-    labels_mask[labels_mask!=0] = 1 #Toutes les coordonnées du gros objet sont unifiées à 1
-    data = labels_mask
-    for j in range(len(hyphe[0])): # on remet les hyphes du plus gros element en label 2
-        if data[hyphe[0][j],hyphe[1][j]] == 1 : 
-            data[hyphe[0][j],hyphe[1][j]] = 2
-    
-    return data
-
 def table_to_widget(table: dict) -> QWidget:
     """
     Takes a table given as dictionary with strings as keys and numeric arrays as values and returns a QWidget which
