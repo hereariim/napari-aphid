@@ -299,11 +299,13 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
 
         print(os.path.join(output_dir.name,path.split('/')[-1][:-3])+'_result_type.tif')
         SEG.append(os.path.join(output_dir.name,path.split('/')[-1][:-3])+'_result_type.tif')
-        
+    
+    names =  []
     for ix in range(len(abs_path_image_tif)):
         ab1 = abs_path_image_tif[ix].split('/')[-2]
         ab2 = abs_path_image_tif[ix].split('/')[-1][:-4].replace('.','_')
         name_folder = ab1+'_'+ab2
+        names.append(name_folder)
         path_folder = os.path.join(output_dir.name,name_folder)
 
         os.mkdir(path_folder)
@@ -321,30 +323,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         print(">",new_image_mask_tif_math)
 
     ######
-    
-    dico = {}
-    with ZipFile(filename,'r') as zipObject:
-    
-        listOfFileNames = zipObject.namelist()
-        
-        for i in trange(len(listOfFileNames)):
             
-            zipObject.extract(listOfFileNames[i],path=zip_dir.name)            
-            temp_i = listOfFileNames[i].replace('/','xx').replace(" ","")       
-            temp_i_jpg = listOfFileNames[i].replace('/','xx')[:-4].replace(" ","")
-            os.mkdir(zip_dir.name+'\\'+temp_i_jpg)
-            shutil.move(zip_dir.name+'\\'+listOfFileNames[i].replace('/','\\'),zip_dir.name+'\\'+temp_i_jpg+'\\'+temp_i)
-            image_segm = function_central(zip_dir.name+'\\'+temp_i_jpg+'\\'+temp_i)
-            imsave(zip_dir.name+'\\'+temp_i_jpg+'\\'+temp_i_jpg+'_result.png', img_as_uint(image_segm))
-            dico[temp_i_jpg+'_result.png'] = image_segm
-            
-    print("Extraction done located into",zip_dir.name)
-        
-    names = []
-    for ix in os.listdir(zip_dir.name):
-        if len(os.listdir(os.path.join(zip_dir.name,ix)))!=0:
-            names.append(ix)
-
     def open_name(item):
         
         name = item.text()
