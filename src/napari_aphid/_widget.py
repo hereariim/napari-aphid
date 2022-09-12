@@ -51,6 +51,7 @@ import shutil
 import matplotlib.cm as cm
 from fileinput import filename
 from glob import glob
+from scipy import ndimage as ndi
 
 from qtpy.QtWidgets import QListWidget
 from qtpy.QtWidgets import QHBoxLayout, QPushButton, QWidget
@@ -205,6 +206,8 @@ def get_quantitative_data_all_for_csv(dossier_des_images,napari_viewer):
     dock_widget = table_to_widget(d)
     napari_viewer.window.add_dock_widget(dock_widget, area='right',name="Save")
     
+
+    
     
 @magic_factory(call_button="Run segmentation",filename={"label": "Pick a file:"})
 def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.cwd()): 
@@ -277,7 +280,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
 
         napari_viewer.layers.select_all()
         napari_viewer.layers.remove_selected()    
-        fname = f'{zip_dir.name}\{name}'
+        fname = f'{output_dir.name}\{name}'
         for fname_i in os.listdir(fname):
             if fname_i.find('result')!=-1:
                 data_label = imread(f'{fname}\{fname_i}')
@@ -286,7 +289,8 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
                 edge=np.where(data_label1==170)
                 aphid=np.where(data_label1==255)
                 data_label1[fond]=0
-                data_label1[edge]=170
+                #data_label1[edge]=170
+                data_label1[edge]=255
                 data_label1[aphid]=255                
                 napari_viewer.add_labels(data_label1,name=f'{fname_i[:-3]}')
             else:
