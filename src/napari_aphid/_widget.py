@@ -422,7 +422,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     def open_name(item):
         
         name = item.text()
-        name_folder = name[:-3]
+        name_folder = name[:-4]
 
         
         print('Loading', name, '...')
@@ -434,9 +434,9 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
             if fname_i.find('result')!=-1:
                 data_label = imread(f'{fname}\{fname_i}')
                 data_label1 = np.array(data_label)       
-                napari_viewer.add_labels(data_label1,name=f'{fname_i[:-3]}')
+                napari_viewer.add_labels(data_label1,name=f'{fname_i[:-4]}')
             else:
-                napari_viewer.add_image(imread(f'{fname}\{fname_i}'),name=f'{fname_i[:-3]}')
+                napari_viewer.add_image(imread(f'{fname}\{fname_i}'),name=f'{fname_i[:-4]}')
 
         print('... done.')
 
