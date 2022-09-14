@@ -231,6 +231,7 @@ def define_marker(labels):
             i+=1
     return labels
         
+output_dir = tempfile.TemporaryDirectory()
     
 @magic_factory(call_button="Run segmentation",filename={"label": "Pick a file:"})
 def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.cwd()): 
@@ -250,7 +251,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     abs_path_image_h5 = [ix.replace("\\","/") for ix in image_abs_path if ix.split('\\')[-1].endswith('h5')]
     abs_path_image_tif = [ix.replace("\\","/") for ix in image_abs_path if ix.split('\\')[-1].endswith('tif')]
 
-    output_dir = tempfile.TemporaryDirectory()
+
     print('output',output_dir.name)
 
     SEG = []
@@ -283,8 +284,8 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         old_image_tif_path = abs_path_image_tif[ix]
         old_image_mask_tif_math = SEG[ix]
 
-        new_image_tif_path = os.path.join(path_folder,abs_path_image_tif[ix].split('/')[-1])
-        new_image_mask_tif_math = os.path.join(path_folder,SEG[ix].split('\\')[-1])
+        new_image_tif_path = os.path.join(path_folder,ab1+'.'+abs_path_image_tif[ix].split('/')[-1])
+        new_image_mask_tif_math = os.path.join(path_folder,ab1+'.'+SEG[ix].split('\\')[-1])
             
         shutil.move(old_image_tif_path,new_image_tif_path)
         shutil.move(old_image_mask_tif_math,new_image_mask_tif_math)
@@ -431,12 +432,19 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         napari_viewer.layers.remove_selected()    
         fname = f'{output_dir.name}\{name}'
         for fname_i in os.listdir(fname):
-            if fname_i.find('result')!=-1:
-                data_label = imread(f'{fname}\{fname_i}')
-                data_label1 = np.array(data_label)       
-                napari_viewer.add_labels(data_label1,name=f'{fname_i[:-4]}')
-            else:
-                napari_viewer.add_image(imread(f'{fname}\{fname_i}'),name=f'{fname_i[:-4]}')
+            if fname_i.find('_result_type')==-1:
+                if fname_i.find('_result')!=-1:
+                    data_label = imread(f'{fname}\{fname_i}')
+                    data_label1 = np.array(data_label)       
+                    
+                    fond_image=np.where(data_label1==0)
+                    aphid=np.where(data_label1!=0)
+                    data_label1[fond_image]=0
+                    data_label1[aphid]=255     
+                    
+                    napari_viewer.add_labels(data_label1,name=f'{fname_i[:-4]}')
+                else:
+                    napari_viewer.add_image(imread(f'{fname}\{fname_i}'),name=f'{fname_i[:-4]}')
 
         print('... done.')
 
@@ -447,3 +455,17 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     list_widget.currentItemChanged.connect(open_name)
     napari_viewer.window.add_dock_widget([list_widget], area='right',name="Images")
     list_widget.setCurrentRow(0)
+    
+@magic_factory(call_button="save modification", layout="vertical")
+def save_modification(image_seg : napari.layers.Labels, image_raw : ImageData, napari_viewer : Viewer):
+    data_label = image_seg.data
+    print("image_seg.name :",image_seg.name)
+    
+    sousdossier = image_seg.name.split('_result')[0].replace('.','_')
+    print("sousdossier (_result) :",image_seg.name.split('_result')[0].replace('.','_'))
+    
+    nom_image = image_seg.name
+    print("nom_image (xx) :", image_seg.name)
+    
+    os.remove(f'{output_dir.name}\{sousdossier}\{image_seg}.png')
+    imsave(f'{output_dir.name}\{sousdossier}\{image_seg}.png', img_as_uint(data_label))

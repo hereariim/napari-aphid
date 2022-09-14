@@ -5,8 +5,13 @@ contributions:
     - id: napari-aphid.process_segmentation
       python_name: napari_aphid._widget:process_function_segmentation
       title: Load image
+    - id: napari-aphid.save_modification_task
+      python_name: napari_aphid._widget:save_modification
+      title: Save modification
 
   widgets:
     - command: napari-aphid.process_segmentation
       display_name: Load image
+    - command: napari-aphid.save_modification_task
+      display_name: Save modification
 
