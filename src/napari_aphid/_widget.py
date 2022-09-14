@@ -240,7 +240,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
 
     with ZipFile(filename,'r') as zipObject:
         listOfFileNames = zipObject.namelist()        
-        for i in trange(len(listOfFileNames)):            
+        for i in range(len(listOfFileNames)):            
             zipObject.extract(listOfFileNames[i],path=zip_dir.name)
             
     T1 = os.listdir(zip_dir.name)
@@ -255,10 +255,10 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     print('output',output_dir.name)
 
     SEG = []
-    for path in abs_path_image_h5:
+    for path_ix in trange(len(abs_path_image_h5)):
         
-        donner = '--raw_data="'+path+'"'
-        recevoir = '--output_filename_format="'+os.path.join(output_dir.name,path.split('/')[-1][:-3])+'_result_type.jpg"'
+        donner = '--raw_data="'+abs_path_image_h5[path_ix]+'"'
+        recevoir = '--output_filename_format="'+os.path.join(output_dir.name,abs_path_image_h5[path_ix].split('/')[-1][:-3])+'_result_type.png"'
         projet_path = '--project="C:/Users/User/sergio_plugin/segmentation_model.ilp"'
         
         subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
@@ -268,9 +268,10 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
                         donner,
                         recevoir])
 
-        print(os.path.join(output_dir.name,path.split('/')[-1][:-3])+'_result_type.tif')
-        SEG.append(os.path.join(output_dir.name,path.split('/')[-1][:-3])+'_result_type.tif')
+        print(os.path.join(output_dir.name,abs_path_image_h5[path_ix].split('/')[-1][:-3])+'_result_type.tif')
+        SEG.append(os.path.join(output_dir.name,abs_path_image_h5[path_ix].split('/')[-1][:-3])+'_result_type.tif')
     
+    print("VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV",len(SEG))
     #names =  []
     for ix in range(len(abs_path_image_tif)):
         ab1 = abs_path_image_tif[ix].split('/')[-2]
@@ -293,6 +294,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         print(">",new_image_tif_path)
         print(">",new_image_mask_tif_math)
 
+    print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
     ######
     
     MASK = []
@@ -350,8 +352,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), np.uint8)
         dico[L[iw]] = [contours,hull]
     
-
-       
     dico_out = {}
     for iw in dico.keys():
         L = dico[iw]
@@ -398,7 +398,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
             
     L1 = list(dico_out.keys())
     names =  []
-    
     for ix in range(len(L1)):
         one_image = np.squeeze(imread(L1[ix])[:,:,0])
         data = np.array(one_image)
@@ -458,14 +457,8 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     
 @magic_factory(call_button="save modification", layout="vertical")
 def save_modification(image_seg : napari.layers.Labels, image_raw : ImageData, napari_viewer : Viewer):
-    data_label = image_seg.data
-    print("image_seg.name :",image_seg.name)
-    
+    data_label = image_seg.data   
     sousdossier = image_seg.name.split('_result')[0].replace('.','_')
-    print("sousdossier (_result) :",image_seg.name.split('_result')[0].replace('.','_'))
-    
     nom_image = image_seg.name
-    print("nom_image (xx) :", image_seg.name)
-    
     os.remove(f'{output_dir.name}\{sousdossier}\{image_seg}.png')
     imsave(f'{output_dir.name}\{sousdossier}\{image_seg}.png', img_as_uint(data_label))
