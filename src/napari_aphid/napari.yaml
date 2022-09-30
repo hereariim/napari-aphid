@@ -8,10 +8,17 @@ contributions:
     - id: napari-aphid.save_modification_task
       python_name: napari_aphid._widget:save_modification
       title: Save modification
+    - id: napari-aphid.process_function_classification
+      python_name: napari_aphid._widget:process_function_classification
+      title: Save modification
+
+
 
   widgets:
     - command: napari-aphid.process_segmentation
       display_name: Load image
     - command: napari-aphid.save_modification_task
       display_name: Save modification
+    - command: napari-aphid.process_function_classification
+      display_name: Classification
 
