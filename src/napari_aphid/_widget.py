@@ -1042,7 +1042,6 @@ def process_function_classification(napari_viewer : Viewer):
         donnee_feature = pd.DataFrame(features)
         
         rslt_donnee_feature = donnee_feature.loc[donnee_feature['size'] >= 10] #supprimer les petits espaces
-        rslt_donnee_feature_to_delete = donnee_feature.loc[donnee_feature['size'] < 10]
         features = {
             'label': list(rslt_donnee_feature['label']),
             'size' : list(rslt_donnee_feature['size']),
