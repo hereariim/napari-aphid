@@ -1065,10 +1065,16 @@ def process_function_classification(napari_viewer : Viewer):
         label_layer = napari_viewer.add_labels(label_image, name='segmentation')
         
         
-        label_image_ = label(label_image)
-        stats_label = regionprops(label_image_)
-        points = [s.centroid for s in stats_label]
-        label_layer = napari_viewer.add_points(points, face_color='green', symbol='cross', size=10, features=features,text=text_parameters)        
+
+        bbox_du_rectangle = [features[f'bbx_{i}'] for i in range(4)]
+        minr = bbox_du_rectangle[0]
+        minc = bbox_du_rectangle[1]
+        maxr = bbox_du_rectangle[2]
+        maxc = bbox_du_rectangle[3]
+        n_len = len(bbox_du_rectangle[0])
+        rectangle_center = [(int(minr[iixh] + maxr[iixh])/2, int(minc[iixh] + maxc[iixh])/2) for iixh in range(n_len)]
+        label_layer = napari_viewer.add_points(rectangle_center, face_color='green', symbol='cross', size=10, features=features,text=text_parameters)        
+        
         dock_widget = table_to_widget(rslt_donnee_feature[['label','size']])        
         napari_viewer.window.add_dock_widget(dock_widget, area='right')                   
 
