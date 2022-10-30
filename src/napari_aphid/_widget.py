@@ -689,9 +689,9 @@ def save_modification(image_seg : napari.layers.Labels, image_raw : ImageData, n
     nom_image = image_seg.name
     os.remove(f'{output_dir.name}\{sousdossier}\{image_seg}.png')
     imsave(f'{output_dir.name}\{sousdossier}\{image_seg}.png', img_as_uint(data_label))
-    
-@magic_factory(call_button="Run classification")
-def process_function_classification(napari_viewer : Viewer):
+
+@magic_factory(call_button="Run classification",filename={"label": "Ilastik Object classification:"})
+def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path.cwd()): 
     path_folder = output_dir.name
     L = os.listdir(path_folder)
     image_path = [os.path.join(path_folder,ix) for ix in L]
@@ -750,11 +750,32 @@ def process_function_classification(napari_viewer : Viewer):
     ####################################
     #for i,j in trange(zip(raw_data_set,segmentation_image_set),total=len(raw_data_set)):
     
-    projet_path = '--project="C:/Users/User/sergio_plugin/classification_simpseg_datad.ilp"'
+    # projet_path = '--project="C:/Users/User/sergio_plugin/classification_simpseg_datad.ilp"'
+    projet_path = '--project='+filename
+
+    fpath = ""
+    for ix in os.listdir(os.environ["ProgramFiles"]):
+        if ix.startswith('ilastik'):
+            fpath = os.path.join(os.environ["ProgramFiles"],ix)
+            break
+
+    try:
+        ilastik_path = ""
+        for ix in os.listdir(fpath):
+            if ix.endswith('.exe') and ix.startswith("ilastik"):
+                ilastik_path = os.path.join(fpath,ix)
+                break
+    except FileNotFoundError:
+        print("Ilastik folder not found in :",os.environ["ProgramFiles"])
+    except:
+        print("Search task failed")
+
+    if os.path.isfile(ilastik_path):
+        print(f"{ix} found")
+    else:
+        print("ilastik.exe not found in :",fpath)
     
     for i in trange(len(raw_data_set)):
-        
-        
         
         path_label = raw_data_set[i].split('\\')
         path_ = '\\'.join(path_label[:-1]).replace('\\','/')
@@ -764,13 +785,21 @@ def process_function_classification(napari_viewer : Viewer):
         raw_image = '--raw_data="'+raw_data_set[i].replace('\\','/')+'"'
         seg_image = '--segmentation_image="'+segmentation_image_set[i].replace('\\','/')+'"'
 
-        subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
+        subprocess.run([ilastik_path,
                                 '--headless',
                                 projet_path,
                                 '--export_source=Object Predictions',
                                 raw_image,
                                 seg_image,
                                 table_filename_path])
+
+        # subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
+        #                         '--headless',
+        #                         projet_path,
+        #                         '--export_source=Object Predictions',
+        #                         raw_image,
+        #                         seg_image,
+        #                         table_filename_path])
     ####################################
     #delete images output of classification
     print(raw_data_set)
