@@ -238,8 +238,8 @@ def define_marker(labels):
         
 output_dir = tempfile.TemporaryDirectory()
     
-@magic_factory(call_button="Run segmentation",filename={"label": "Pick a file:"})
-def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.cwd()): 
+@magic_factory(call_button="Run segmentation",filename={"label": "Images:"},filename2={"label": "Ilastik Pixel classification:"})
+def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.cwd(),filename2=pathlib.Path.cwd()): 
     
     zip_dir = tempfile.TemporaryDirectory()
 
@@ -264,6 +264,29 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     abs_path_image_tif = [ix.replace("\\","/") for ix in image_abs_path if ix.split('\\')[-1].endswith('tif')]
     
 
+    fpath = ""
+    for ix in os.listdir(os.environ["ProgramFiles"]):
+        if ix.startswith('ilastik'):
+            fpath = os.path.join(os.environ["ProgramFiles"],ix)
+            break
+
+    try:
+        ilastik_path = ""
+        for ix in os.listdir(fpath):
+            if ix.endswith('.exe') and ix.startswith("ilastik"):
+                ilastik_path = os.path.join(fpath,ix)
+                break
+    except FileNotFoundError:
+        print("Ilastik folder not found in :",os.environ["ProgramFiles"])
+    except:
+        print("Search task failed")
+
+    if os.path.isfile(ilastik_path):
+        print(f"{ix} found")
+    else:
+        print("ilastik.exe not found in :",fpath)
+
+
     print('output',output_dir.name)
 
     SEG = []
@@ -271,9 +294,9 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         
         donner = '--raw_data="'+abs_path_image_h5[path_ix]+'"'
         recevoir = '--output_filename_format="'+os.path.join(output_dir.name,abs_path_image_h5[path_ix].split('/')[-1][:-3])+'_result_type.jpg"'
-        projet_path = '--project="C:/Users/User/sergio_plugin/segmentation_model.ilp"'
-        
-        subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
+        # projet_path = '--project="C:/Users/User/sergio_plugin/segmentation_model.ilp"'
+        projet_path = '--project='+filename2
+        subprocess.run([ilastik_path,
                         '--headless',
                         projet_path,
                         '--export_source=Simple Segmentation',
