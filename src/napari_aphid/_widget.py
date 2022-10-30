@@ -15,10 +15,9 @@ import skimage.io
 import os
 from os import listdir,makedirs
 from os.path import isfile, join
-
+# import imagej
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import subprocess
 
@@ -61,11 +60,14 @@ from scipy import ndimage
 from scipy import ndimage as ndi
 import matplotlib.pyplot as plt
 
-from qtpy.QtWidgets import QListWidget
-from qtpy.QtWidgets import QHBoxLayout, QPushButton, QWidget
-from qtpy.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
-from qtpy.QtWidgets import QListWidget
+from qtpy.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog, QHBoxLayout, QPushButton, QWidget, QListWidget
 from qtpy.QtCore import Qt
+
+import pandas as pd
+from turtle import done
+from skimage.morphology import closing, square, remove_small_objects
+from magicgui.widgets import ComboBox, Container
+
 
 zip_dir = tempfile.TemporaryDirectory()
 
@@ -521,6 +523,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
             dico_out[iw] = OUT_value
             
     L1 = list(dico_out.keys())
+    print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<",L1)
     names =  []
 #    for ix in range(len(L1)):
 #        one_image = np.squeeze(imread(L1[ix])[:,:,0])
@@ -692,3 +695,418 @@ def process_function_classification(napari_viewer : Viewer):
     path_folder = output_dir.name
     L = os.listdir(path_folder)
     image_path = [os.path.join(path_folder,ix) for ix in L]
+    print(">>>>>>>>>>>>", image_path)
+    
+    ####################################
+    raw_data_set = []
+    segmentation_image_set = []
+    raw_data_tif_set = []
+    for ix in range(len(image_path)):
+        image_set = image_path[ix]
+        for ix_file in os.listdir(image_set):
+            if ix_file.endswith('.h5'):
+                raw_data_set.append(os.path.join(image_set,ix_file))
+            if ix_file.endswith('_result.png'):
+                segmentation_image_set.append(os.path.join(image_set,ix_file))
+            if ix_file.endswith('.tif') and ix_file.find('_result_type')==-1:
+                raw_data_tif_set.append(os.path.join(image_set,ix_file))
+    ####################################
+    for ix in range(len(segmentation_image_set)):
+        path_image = segmentation_image_set[ix] 
+        img = skimage.io.imread(path_image)
+
+        gxg = img.shape
+        if len(gxg)==3:
+            data_fill = ndi.binary_fill_holes(np.squeeze(img[:,:,0])).astype(int)
+        else:
+            data_fill = ndi.binary_fill_holes(img).astype(int)
+        data = np.array(data_fill)
+        fond_image=np.where(data==0)
+        aphid=np.where(data!=0)
+        data[fond_image]=0
+        data[aphid]=255
+
+        os.remove(path_image)
+        #imsave(path_image,data)
+        path_image_new = path_image[:-4]+'.png'
+        plt.imsave(path_image_new, data, cmap = plt.cm.gray)
+    ####################################
+    # path_image = segmentation_image_set[5]
+    # img = skimage.io.imread(path_image)
+    # img1 = np.squeeze(img[:,:,0])
+    # labels = label(img1)
+    # A_temps = [R.area for R in regionprops(labels)]
+    # print(A_temps)
+
+    # Y = np.sort(A_temps)
+    # Y1 = np.array(Y)
+    # classe2 = Y1[Y1 > 10]
+
+    # for R in regionprops(labels):
+    #     if R.area in classe2:
+    #         for c in R.coords:  
+    #             print(R.area,c[0],c[1])
+    # plt.imshow(img)
+    ####################################
+    #for i,j in trange(zip(raw_data_set,segmentation_image_set),total=len(raw_data_set)):
+    
+    projet_path = '--project="C:/Users/User/sergio_plugin/classification_simpseg_datad.ilp"'
+    
+    for i in trange(len(raw_data_set)):
+        
+        
+        
+        path_label = raw_data_set[i].split('\\')
+        path_ = '\\'.join(path_label[:-1]).replace('\\','/')
+        nom = path_label[-2]
+
+        table_filename_path = '--table_filename="'+path_+'/exported_'+nom+'.csv"'
+        raw_image = '--raw_data="'+raw_data_set[i].replace('\\','/')+'"'
+        seg_image = '--segmentation_image="'+segmentation_image_set[i].replace('\\','/')+'"'
+
+        subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
+                                '--headless',
+                                projet_path,
+                                '--export_source=Object Predictions',
+                                raw_image,
+                                seg_image,
+                                table_filename_path])
+    ####################################
+    #delete images output of classification
+    print(raw_data_set)
+    for i in range(len(image_path)):
+        L_temp = os.listdir(image_path[i])
+        L_h5 = [ix for ix in L_temp if ix.endswith('.h5')]
+        for j in L_h5:
+            un_lien = os.path.join(image_path[i],j)
+            if un_lien not in raw_data_set:
+                print(un_lien)
+                os.remove(un_lien)
+                
+    # Ranger les tableaux dans une liste
+
+    TABLE_PATH = []
+    for i in trange(len(raw_data_set)):   
+        path_label = raw_data_set[i].split('\\')
+        path_ = '\\'.join(path_label[:-1]).replace('\\','/')
+        nom = path_label[-2]
+        table_name_path = path_+'/exported_'+nom+'_table.csv'
+        print(table_name_path)
+        TABLE_PATH.append(table_name_path)
+    ####################################
+    def make_bbox(bbox_extents):
+        """Get the coordinates of the corners of a
+        bounding box from the extents
+        Parameters
+        ----------
+        bbox_extents : list (4xN)
+            List of the extents of the bounding boxes for each of the N regions.
+            Should be ordered: [min_row, min_column, max_row, max_column]
+        Returns
+        -------
+        bbox_rect : np.ndarray
+            The corners of the bounding box. Can be input directly into a
+            napari Shapes layer.
+        """
+        minr = bbox_extents[0]
+        minc = bbox_extents[1]
+        maxr = bbox_extents[2]
+        maxc = bbox_extents[3]
+
+        bbox_rect = np.array(
+            [[minr, minc], [maxr, minc], [maxr, maxc], [minr, maxc]]
+        )
+        bbox_rect = np.moveaxis(bbox_rect, 2, 0)
+
+        return bbox_rect
+
+
+
+    def table_to_widget(table: dict) -> QWidget:
+        """
+        Takes a table given as dictionary with strings as keys and numeric arrays as values and returns a QWidget which
+        contains a QTableWidget with that data.
+        """
+        view = Table(value=table)
+
+        copy_button = QPushButton("Copy to clipboard")
+
+        @copy_button.clicked.connect
+        def copy_trigger():
+            view.to_dataframe().to_clipboard()
+
+        save_button = QPushButton("Save as csv...")
+
+        @save_button.clicked.connect
+        def save_trigger():
+            filename, _ = QFileDialog.getSaveFileName(save_button, "Save as csv...", ".", "*.csv")
+            view.to_dataframe().to_csv(filename)
+
+        edit_button = QPushButton("Edit")
+        @edit_button.clicked.connect
+        def edit_trigger():
+            pass
+            
+        widget = QWidget()
+        widget.setWindowTitle("region properties")
+        widget.setLayout(QGridLayout())
+        widget.layout().addWidget(copy_button)
+        widget.layout().addWidget(save_button)
+        widget.layout().addWidget(view.native)
+        widget.layout().addWidget(edit_button)
+
+        return widget
+
+    # set up the annotation values and text display properties
+    box_annotations = ['Winged adult', 'Apterous adult', 'Nymph','Larvae','Larvae/Nymph small','Molt']
+    text_property = 'box_label'
+    text_color = 'green'
+
+    # create the GUI for selecting the values
+    def create_label_menu(shapes_layer, label_property, labels):
+        """Create a label menu widget that can be added to the napari viewer dock
+
+        Parameters:
+        -----------
+        shapes_layer : napari.layers.Shapes
+            a napari shapes layer
+        label_property : str
+            the name of the shapes property to use the displayed text
+        labels : List[str]
+            list of the possible text labels values.
+
+        Returns:
+        --------
+        label_widget : magicgui.widgets.Container
+            the container widget with the label combobox
+        """
+        # Create the label selection menu
+        label_menu = ComboBox(label='text label', choices=labels)
+        label_widget = Container(widgets=[label_menu])
+
+        def update_label_menu(event):
+            """This is a callback function that updates the label menu when
+            the current properties of the Shapes layer change
+            """
+            new_label = str(shapes_layer.current_properties[label_property][0])
+            if new_label != label_menu.value:
+                label_menu.value = new_label
+
+        shapes_layer.events.current_properties.connect(update_label_menu)
+
+        def label_changed(event):
+            """This is acallback that update the current properties on the Shapes layer
+            when the label menu selection changes
+            """
+            selected_label = event.value
+            current_properties = shapes_layer.current_properties
+            current_properties[label_property] = np.asarray([selected_label])
+            shapes_layer.current_properties = current_properties
+
+        label_menu.changed.connect(label_changed)
+
+        return label_widget
+
+    def visualiser_resultat_detection(iy):
+
+        doneeee = pd.read_csv(TABLE_PATH[iy])
+
+        class_predicted = list(doneeee['Predicted Class'])
+        size_in_pixel = list(doneeee['Size in pixels'])
+        bbx_min0 = list(doneeee['Bounding Box Minimum_0'])
+        bbx_min1 = list(doneeee['Bounding Box Minimum_1'])
+        bbx_max0 = list(doneeee['Bounding Box Maximum_0'])
+        bbx_max1 = list(doneeee['Bounding Box Maximum_1'])
+
+
+        original_image = imread(raw_data_tif_set[iy].replace('\\','/'));print(raw_data_tif_set[iy].replace('\\','/'))
+
+        image_label_temp = imread(segmentation_image_set[iy].replace('\\','/'))
+        if len(image_label_temp.shape)==2:
+            label_image = imread(segmentation_image_set[iy].replace('\\','/'));print(segmentation_image_set[iy].replace('\\','/'))
+        else:
+            label_image = np.squeeze(imread(segmentation_image_set[iy].replace('\\','/'))[:,:,0]);print(segmentation_image_set[iy].replace('\\','/'))
+            
+        # create the features dictionary
+        features = {
+            'label': class_predicted,
+            'size' : size_in_pixel,
+            'bbx_0' : bbx_min1,
+            'bbx_1' : bbx_min0,
+            'bbx_2' : bbx_max1,
+            'bbx_3' : bbx_max0,    
+        }
+
+        donnee_feature = pd.DataFrame(features)
+        rslt_donnee_feature = donnee_feature.loc[donnee_feature['size'] >= 10] #supprimer les petits espaces
+        
+        features = {
+            'label': list(rslt_donnee_feature['label']),
+            'size' : list(rslt_donnee_feature['size']),
+            'bbx_0' : list(rslt_donnee_feature['bbx_0']),
+            'bbx_1' : list(rslt_donnee_feature['bbx_1']),
+            'bbx_2' : list(rslt_donnee_feature['bbx_2']),
+            'bbx_3' : list(rslt_donnee_feature['bbx_3']),    
+        }
+        
+        
+        
+        """
+        Annotate segmentation with text
+        ===============================
+        Perform a segmentation and annotate the results with
+        bounding boxes and text
+        .. tags:: analysis
+        """
+        
+        # create the bounding box rectangles
+        bbox_rects = make_bbox([features[f'bbx_{i}'] for i in range(4)])
+
+        # specify the display parameters for the text
+        text_parameters = {
+            'string': '{label}\nsize (in pxl): {size}',
+            'size': 11,
+            'color': 'green',
+            'anchor': 'upper_left',
+            'translation': [-3, 0],
+        }
+
+        viewer = napari.view_image(original_image, name='aphid')
+        label_layer = viewer.add_labels(label_image, name='segmentation')
+        
+        
+        label_image_ = label(label_image)
+        stats_label = regionprops(label_image_)
+        points = [s.centroid for s in stats_label]
+        label_layer = viewer.add_points(points, face_color='green', symbol='cross', size=10, features=features,text=text_parameters)
+        
+        # shapes_layer = viewer.add_shapes(
+        #     bbox_rects,
+        #     face_color='transparent',
+        #     edge_color='green',
+        #     features=features,
+        #     text=text_parameters,
+        #     name='bounding box',
+        # )
+
+        dock_widget = table_to_widget(rslt_donnee_feature[['label','size']])
+        
+        viewer.window.add_dock_widget(dock_widget, area='right')
+               
+        # if __name__ == '__main__':
+        #     napari.run()
+            
+    # visualiser_resultat_detection(6)
+
+    names = [ix.split('\\')[-1] for ix in image_path]
+    print(names)
+    
+    def open_name(item):
+        
+        name = item.text()
+        name_folder = name[:-4]
+
+        
+        print('Loading', name, '...')
+
+        napari_viewer.layers.select_all()
+        napari_viewer.layers.remove_selected()    
+        fname = f'{output_dir.name}\{name}'
+        print('donnee dans fname :',os.listdir(fname))
+        
+        AAAA = np.array(os.listdir(fname))
+        
+        original_image_path_tif = list(filter(None,list(np.where(np.char.endswith(AAAA,'.tif'),AAAA,''))))[0]
+        original_image_path_h5 = list(filter(None,list(np.where(np.char.endswith(AAAA,'.h5'),AAAA,''))))[0]
+        result_image_path_png = list(filter(None,list(np.where(np.char.endswith(AAAA,'_result.png'),AAAA,''))))[0]
+        result_type_image_path_png = list(filter(None,list(np.where(np.char.endswith(AAAA,'_result_type.png'),AAAA,''))))[0]
+        table_path_csv = list(filter(None,list(np.where(np.char.endswith(AAAA,'.csv'),AAAA,''))))[0]
+        
+        # result
+        data_label = np.squeeze(imread(f'{fname}\{result_image_path_png}')[:,:,0])
+        data_label1 = np.array(data_label)       
+                    
+        fond_image=np.where(data_label1==0)
+        aphid=np.where(data_label1!=0)
+        data_label1[fond_image]=0
+        data_label1[aphid]=255     
+                    
+        napari_viewer.add_labels(data_label1,name=f'{result_image_path_png[:-4]}')
+        
+        # tif        
+        napari_viewer.add_image(imread(f'{fname}\{original_image_path_tif}'),name=f'{original_image_path_tif[:-4]}')
+        
+        # donnee
+        doneeee = pd.read_csv(f'{fname}\{table_path_csv}')
+        
+        class_predicted = list(doneeee['Predicted Class'])
+        size_in_pixel = list(doneeee['Size in pixels'])
+        bbx_min0 = list(doneeee['Bounding Box Minimum_0'])
+        bbx_min1 = list(doneeee['Bounding Box Minimum_1'])
+        bbx_max0 = list(doneeee['Bounding Box Maximum_0'])
+        bbx_max1 = list(doneeee['Bounding Box Maximum_1'])
+        
+        original_image = imread(f'{fname}\{original_image_path_tif}')
+        image_label_temp = imread(f'{fname}\{result_image_path_png}')
+        if len(image_label_temp.shape)==2:
+            label_image = imread(f'{fname}\{result_image_path_png}')
+        else:
+            label_image = np.squeeze(imread(f'{fname}\{result_image_path_png}')[:,:,0])
+            
+        features = {
+            'label': class_predicted,
+            'size' : size_in_pixel,
+            'bbx_0' : bbx_min1,
+            'bbx_1' : bbx_min0,
+            'bbx_2' : bbx_max1,
+            'bbx_3' : bbx_max0,    
+        }
+
+        donnee_feature = pd.DataFrame(features)
+        
+        rslt_donnee_feature = donnee_feature.loc[donnee_feature['size'] >= 10] #supprimer les petits espaces
+        features = {
+            'label': list(rslt_donnee_feature['label']),
+            'size' : list(rslt_donnee_feature['size']),
+            'bbx_0' : list(rslt_donnee_feature['bbx_0']),
+            'bbx_1' : list(rslt_donnee_feature['bbx_1']),
+            'bbx_2' : list(rslt_donnee_feature['bbx_2']),
+            'bbx_3' : list(rslt_donnee_feature['bbx_3']),    
+        }
+        
+        bbox_rects = make_bbox([features[f'bbx_{i}'] for i in range(4)])
+
+        # specify the display parameters for the text
+        text_parameters = {
+            'string': '{label}\nsize (in pxl): {size}',
+            'size': 11,
+            'color': 'green',
+            'anchor': 'upper_left',
+            'translation': [-3, 0],
+        }
+
+        label_layer = napari_viewer.add_labels(label_image, name='segmentation')
+        
+        
+
+        bbox_du_rectangle = [features[f'bbx_{i}'] for i in range(4)]
+        minr = bbox_du_rectangle[0]
+        minc = bbox_du_rectangle[1]
+        maxr = bbox_du_rectangle[2]
+        maxc = bbox_du_rectangle[3]
+        n_len = len(bbox_du_rectangle[0])
+        rectangle_center = [(int(minr[iixh] + maxr[iixh])/2, int(minc[iixh] + maxc[iixh])/2) for iixh in range(n_len)]
+        label_layer = napari_viewer.add_points(rectangle_center, face_color='green', symbol='cross', size=10, features=features,text=text_parameters)        
+        
+        dock_widget = table_to_widget(rslt_donnee_feature[['label','size']])        
+        napari_viewer.window.add_dock_widget(dock_widget, area='right')                   
+
+        print('... done.')
+
+
+    list_widget = QListWidget()
+    for n in names:
+        list_widget.addItem(n)    
+    list_widget.currentItemChanged.connect(open_name)
+    napari_viewer.window.add_dock_widget([list_widget], area='right',name="Images")
+    list_widget.setCurrentRow(0)
