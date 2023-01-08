@@ -68,8 +68,34 @@ from turtle import done
 from skimage.morphology import closing, square, remove_small_objects
 from magicgui.widgets import ComboBox, Container
 
+import subprocess
+import time
+import threading
+import queue
+
 
 zip_dir = tempfile.TemporaryDirectory()
+
+class MyProcess(threading.Thread):
+    def __init__(self,nom_image,q):
+        threading.Thread.__init__(self)
+        self.nom_image = nom_image
+        self.q = q
+    
+    def run(self):
+        data = self.q.get()
+        ilastik_path = 'C:/Program Files/ilastik-1.3.3post3/ilastik.exe'
+        filename, file_extension = os.path.splitext(self.nom_image)
+        donner = '--raw_data='+self.nom_image
+        recevoir = '--output_filename_format='+filename+'_result_type'+file_extension
+        projet_path = '--project=C:/Users/Metuarea Herearii/Desktop/yolo_detection_tools/segmentation_model.ilp'
+        start_process = time.time()
+        subprocess.run([ilastik_path,'--headless',projet_path,'--export_source=Simple Segmentation',donner,recevoir])
+        end_process = time.time()
+        file_name = os.path.basename(filename)
+        print(f"IMG {file_name} = {np.round(end_process-start_process,2)} second")
+        os.remove(filename+'_result_type'+file_extension)
+
 
 
 def PolyArea2D(pts):
@@ -252,10 +278,10 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
             
     image_abs_path = []
 
-    T1 = os.listdir(zip_dir.name)
+    T1 = os.listdir(zip_dir.name) # = dossier1, dossier2, ...
 
     for ix in T1:
-        dossier = zip_dir.name+'\\'+ix
+        dossier,_ = os.path.splitext(zip_dir.name+'\\'+ix)
         T2 = os.listdir(dossier)
         for iix in T2:
             sub_dossier = zip_dir.name+'\\'+ix+'\\'+iix
@@ -291,23 +317,37 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
 
     print('output',output_dir.name)
 
-    SEG = []
-    for path_ix in trange(len(abs_path_image_h5)):
-        
-        donner = '--raw_data="'+abs_path_image_h5[path_ix]+'"'
-        recevoir = '--output_filename_format="'+os.path.join(output_dir.name,abs_path_image_h5[path_ix].split('/')[-1][:-3])+'_result_type.jpg"'
-        # projet_path = '--project="C:/Users/User/sergio_plugin/segmentation_model.ilp"'
-        projet_path = '--project='+filename2
-        subprocess.run([ilastik_path,
-                        '--headless',
-                        projet_path,
-                        '--export_source=Simple Segmentation',
-                        donner,
-                        recevoir])
+    start_time = time.time()
+    queueLock = threading.Lock()
+    workQueue = queue.Queue(10)
 
-        print(os.path.join(output_dir.name,abs_path_image_h5[path_ix].split('/')[-1][:-3])+'_result_type.tif')
-        SEG.append(os.path.join(output_dir.name,abs_path_image_h5[path_ix].split('/')[-1][:-3])+'_result_type.tif')
-        
+    SEG = []
+    threads_list = []
+    for path_ix in trange(len(abs_path_image_h5)):
+        im_h5 = abs_path_image_h5[path_ix]
+        thread = MyProcess(im_h5,workQueue)
+        thread.start()
+        threads_list.append(thread)
+
+        filename, file_extension = os.path.splitext(im_h5)
+        image_name = os.path.basename(filename)
+        SEG.append(os.path.join(output_dir.name,image_name+'_result_type.tif'))
+
+    queueLock.acquire()
+    for word in abs_path_image_h5:
+        name_image = os.path.basename(word)
+        workQueue.put(name_image)
+    queueLock.release()
+
+    while not workQueue.empty():
+        pass
+
+    for t in threads_list:
+        t.join()
+
+    print(f"Total process time : {np.round(time.time() - start_time,2)} seconds")
+
+
     # ICI, ON CREE DEUX CLASSES ET ON REMPLI LES TROUS
     for ix in range(len(SEG)):
         print("création deux classes :",ix,len(SEG))
@@ -525,26 +565,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     L1 = list(dico_out.keys())
     print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<",L1)
     names =  []
-#    for ix in range(len(L1)):
-#        one_image = np.squeeze(imread(L1[ix])[:,:,0])
-#        data = np.array(one_image)
 
-#        distance = ndi.distance_transform_edt(one_image)
-#        coords = peak_local_max(distance, footprint=np.ones((3, 3)), labels=one_image)
-#        mask = np.zeros(distance.shape, dtype=bool)
-#        mask[tuple(coords.T)] = True
-#        markers, _ = ndi.label(mask)
-#        labels = watershed(-distance, markers, mask=one_image)
-#        labels_data = define_marker(labels)
-        
-#        data = np.array(labels_data)
-#        fond_image=np.where(data==0)
-#        aphid=np.where(data!=0)
-#        data[fond_image]=0
-#        data[aphid]=255
-#        names.append(L1[ix].split('\\')[-2])
-#        skimage.io.imsave(L1[ix], data)
-        #plt.imsave(L1[ix], data, cmap = plt.cm.gray)
     for ix in range(len(L1)):
         ###########################
 
