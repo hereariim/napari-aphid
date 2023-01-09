@@ -15,6 +15,7 @@ from scipy.ndimage import gaussian_filter
 from skimage.morphology import binary_opening
 from skimage.filters import threshold_otsu as gaussian, sobel
 import skimage.io
+from tqdm import tqdm
 
 import os
 from os import listdir,makedirs
@@ -81,24 +82,26 @@ import queue
 zip_dir = tempfile.TemporaryDirectory()
 
 class MyProcess(threading.Thread):
-    def __init__(self,nom_image,q):
+    def __init__(self,nom_image,projet,q):
         threading.Thread.__init__(self)
         self.nom_image = nom_image
         self.q = q
+        self.projet = projet
     
     def run(self):
         data = self.q.get()
         ilastik_path = 'C:/Program Files/ilastik-1.3.3post3/ilastik.exe'
         filename, file_extension = os.path.splitext(self.nom_image)
+        print(f"{filename} IMPORTED")
         donner = '--raw_data='+self.nom_image
-        recevoir = '--output_filename_format='+filename+'_result_type'+file_extension
-        projet_path = '--project=C:/Users/Metuarea Herearii/Desktop/yolo_detection_tools/segmentation_model.ilp'
+        recevoir = '--output_filename_format='+filename+'_result'+file_extension
+        projet_path = '--project='+self.projet #C:/Users/Metuarea Herearii/Desktop/yolo_detection_tools/segmentation_model.ilp'
         start_process = time.time()
         subprocess.run([ilastik_path,'--headless',projet_path,'--export_source=Simple Segmentation',donner,recevoir])
         end_process = time.time()
         file_name = os.path.basename(filename)
-        print(f"IMG {file_name} = {np.round(end_process-start_process,2)} second")
-        os.remove(filename+'_result_type'+file_extension)
+        print(f"IMG {filename} = {np.round(end_process-start_process,2)} second")
+        # os.remove(filename+'_result_type'+file_extension)
 
 
 
@@ -269,11 +272,14 @@ def define_marker(labels):
     return labels
         
 output_dir = tempfile.TemporaryDirectory()
+zip_dir = tempfile.TemporaryDirectory()
     
 @magic_factory(call_button="Run segmentation",filename={"label": "Images:"},filename2={"label": "Ilastik Pixel classification:"})
 def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.cwd(),filename2=pathlib.Path.cwd()): 
     
-    zip_dir = tempfile.TemporaryDirectory()
+    filename2 = str(filename2)
+    
+    # zip_dir = tempfile.TemporaryDirectory()
 
     with ZipFile(filename,'r') as zipObject:
         listOfFileNames = zipObject.namelist()        
@@ -282,20 +288,20 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
             
     image_abs_path = []
 
-    T1 = os.listdir(zip_dir.name) # = dossier1, dossier2, ...
+    T1 = os.listdir(zip_dir.name)
 
     for ix in T1:
-        dossier,_ = os.path.splitext(zip_dir.name+'\\'+ix)
+        dossier = os.path.join(zip_dir.name,ix)
         T2 = os.listdir(dossier)
         for iix in T2:
-            sub_dossier = zip_dir.name+'\\'+ix+'\\'+iix
+            sub_dossier = os.path.join(zip_dir.name,ix,iix)
             for iiix in os.listdir(sub_dossier):
-                image_abs_path.append(zip_dir.name+'\\'+ix+'\\'+iix+'\\'+iiix)
+                image_abs_path.append(os.path.join(zip_dir.name,ix,iix,iiix))
 
-    abs_path_image_h5 = [ix.replace("\\","/") for ix in image_abs_path if ix.split('\\')[-1].endswith('h5')]
-    abs_path_image_tif = [ix.replace("\\","/") for ix in image_abs_path if ix.split('\\')[-1].endswith('tif')]
+    abs_path_image_h5 = [ix for ix in image_abs_path if ix.endswith('h5')]
+    abs_path_image_tif = [ix for ix in image_abs_path if ix.endswith('tif')]
     
-
+    #CHECK ILASTIK
     fpath = ""
     for ix in os.listdir(os.environ["ProgramFiles"]):
         if ix.startswith('ilastik'):
@@ -318,62 +324,111 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     else:
         print("ilastik.exe not found in :",fpath)
 
-
-    print('output',output_dir.name)
-
+    # SEGMENTATION PROCESSING
+    sub_list_h5 = []
+    A_list_h5 = []
+    ctp = 0
+    for ix in abs_path_image_h5: 
+        if len(A_list_h5)==5:
+            sub_list_h5.append(A_list_h5)
+            A_list_h5 = []
+            A_list_h5.append(ix)
+            ctp+=1
+        else:
+            A_list_h5.append(ix)
+    s=0
+    for ix in sub_list_h5:
+        s+=len(ix)
+    if s!=len(abs_path_image_h5):
+        sub_list_h5.append(A_list_h5)
+    
     start_time = time.time()
     queueLock = threading.Lock()
     workQueue = queue.Queue(10)
 
+    print("H5 file",abs_path_image_h5)
+
     SEG = []
     threads_list = []
-    for path_ix in trange(len(abs_path_image_h5)):
-        im_h5 = abs_path_image_h5[path_ix]
-        thread = MyProcess(im_h5,workQueue)
-        thread.start()
-        threads_list.append(thread)
+    for iy in tqdm(range(len(sub_list_h5)), desc= 'PROCESSING'):
+        list_to_work = sub_list_h5[iy]
+        for path_ix in range(len(list_to_work)):
+            im_h5 = list_to_work[path_ix]
+            thread = MyProcess(im_h5,filename2,workQueue)
+            thread.start()
+            threads_list.append(thread)
 
-        filename, file_extension = os.path.splitext(im_h5)
-        image_name = os.path.basename(filename)
-        SEG.append(os.path.join(output_dir.name,image_name+'_result_type.tif'))
+            # filename, file_extension = os.path.splitext(im_h5)
+            # image_name = os.path.basename(filename)
+            # SEG.append(os.path.join(output_dir.name,image_name+'_result_type.tif'))
 
-    queueLock.acquire()
-    for word in abs_path_image_h5:
-        name_image = os.path.basename(word)
-        workQueue.put(name_image)
-    queueLock.release()
+        queueLock.acquire()
+        for word in list_to_work:
+            name_image = os.path.basename(word)
+            workQueue.put(name_image)
+        queueLock.release()
 
-    while not workQueue.empty():
-        pass
+        while not workQueue.empty():
+            pass
 
-    for t in threads_list:
-        t.join()
+        for t in threads_list:
+            t.join()
 
     print(f"Total process time : {np.round(time.time() - start_time,2)} seconds")
 
+    # for ik in trange(len(abs_path_image_h5)):   
+    #     donner = '--raw_data="'+abs_path_image_h5[ik]+'"'
+    #     recevoir = '--output_filename_format="'+os.path.join(zip_dir.name,abs_path_image_h5[ik].split('/')[-1][:-3])+'_result.jpg"'
+    #     projet_path = f'--project={filename2}'
+        
+    #     subprocess.run([ilastik_path,
+    #                     '--headless',
+    #                     projet_path,
+    #                     '--export_source=Simple Segmentation',
+    #                     donner,
+    #                     recevoir])
+     
+    # Mettre dans une liste le chemin des images segmentées        
+    SEG = []
+    for ix in T1:
+        dossier = os.path.join(zip_dir.name,ix)
+        T2 = os.listdir(dossier)
+        for iix in T2:
+            sub_dossier = os.path.join(zip_dir.name,ix,iix)
+            for iiix in os.listdir(sub_dossier):
+                name_to_study = os.path.join(zip_dir.name,ix,iix,iiix)
+                if name_to_study.find("result")!=-1:
+                    SEG.append(name_to_study)
+    print(SEG)
 
     # ICI, ON CREE DEUX CLASSES ET ON REMPLI LES TROUS
-    for ix in range(len(SEG)):
-        print("création deux classes :",ix,len(SEG))
+    from collections import Counter
+    from skimage.util import img_as_ubyte
+    from skimage import io
+
+    print("IMAGE BINARISATION")
+    for ix in tqdm(range(len(SEG))):
         path_image = SEG[ix] 
         img = skimage.io.imread(path_image)
-
 
         data = np.array(img)
         fond_image=np.where(data==0)
         aphid=np.where(data!=0)
         data[fond_image]=0
         data[aphid]=255
+                
+        data = np.array(data)
+        fond_image=np.where(data==0)
+        aphid=np.where(data!=0)
+        data[fond_image]=0
+        data[aphid]=255
 
-        os.remove(path_image)
-        path_image_new = path_image[:-4]+'.png'
+        head , _ = os.path.splitext(path_image)
+        path_image_new = head+'.png'
         plt.imsave(path_image_new, data, cmap = plt.cm.gray)
-    print('done')
-        
-    ########## Enlever les petites régions avec moyenne
 
-    SEG = [os.path.join(output_dir.name,ix) for ix in os.listdir(output_dir.name)]
-
+    print("REMOVE tiny space")
+    ########## Enlever les petites régions avec moyenne puis enregistrer
     def PolyArea2D(pts):
         lines = np.hstack([pts,np.roll(pts,-1,axis=0)])
         area = 0.5*abs(sum(x1*y2-x2*y1 for x1,y1,x2,y2 in lines))
@@ -398,101 +453,97 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), np.uint8)
         dico[SEG[iw]] = [contours,hull]
     
-    SEG = [os.path.join(output_dir.name,ix) for ix in os.listdir(output_dir.name)]
+    # for ix in range(len(SEG)):
+    #     path_image = SEG[ix]
+    #     img = imread(path_image)
+    #     img = np.squeeze(img[:,:,0])
 
+    #     bigger = np.zeros_like(img)
+    #     labels = label(img)
 
-    for ix in range(len(SEG)):
-        path_image = SEG[ix]
-        img = imread(path_image)
-        img = np.squeeze(img[:,:,0])
+    #     A_temps = [R.area for R in regionprops(labels)]
 
-        bigger = np.zeros_like(img)
-        labels = label(img)
+    #     Y = np.sort(A_temps) 
+    #     Y1 = np.array(Y)
 
-        A_temps = [R.area for R in regionprops(labels)]
+    #     classe1 = Y1[Y1 <= np.mean(Y)]
+    #     classe2 = Y1[Y1 > np.mean(Y)]
 
-        Y = np.sort(A_temps) 
-        Y1 = np.array(Y)
-
-        classe1 = Y1[Y1 <= np.mean(Y)]
-        classe2 = Y1[Y1 > np.mean(Y)]
-
-        for R in regionprops(labels):
-            if R.area in classe2:
-                for c in R.coords:  
-                    bigger[c[0], c[1]] = 1
+    #     for R in regionprops(labels):
+    #         if R.area in classe2:
+    #             for c in R.coords:  
+    #                 bigger[c[0], c[1]] = 1
         
-        os.remove(path_image)
-        plt.imsave(path_image, bigger, cmap = plt.cm.gray)
+    #     os.remove(path_image)
+    #     plt.imsave(path_image, bigger, cmap = plt.cm.gray)
         
-    ################################ Ranger les images dans un seul dossier
+    ########## Ranger les images dans un seul dictionnaire
     
-    print("VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV",len(SEG))
-    #names =  []
+    print("Ranger dans un dictionnaire",len(SEG))
+
+    dico_image_temp = {}
+    names = []
     for ix in range(len(abs_path_image_tif)):
-        ab1 = abs_path_image_tif[ix].split('/')[-2]
-        ab2 = abs_path_image_tif[ix].split('/')[-1][:-4].replace('.','_')
-        name_folder = ab1+'_'+ab2
-        #names.append(name_folder)
-        path_folder = os.path.join(output_dir.name,name_folder)
-
-        os.mkdir(path_folder)
-
-        old_image_tif_path = abs_path_image_tif[ix]
-        old_image_h5_path = abs_path_image_h5[ix]        
-        old_image_mask_tif_math = SEG[ix]
-
-        new_image_tif_path = os.path.join(path_folder,ab1+'.'+abs_path_image_tif[ix].split('/')[-1])
-        new_image_h5_path = os.path.join(path_folder,ab1+'.'+abs_path_image_h5[ix].split('/')[-1])
-        new_image_mask_tif_math = os.path.join(path_folder,ab1+'.'+SEG[ix].split('\\')[-1])
-            
-        shutil.move(old_image_tif_path,new_image_tif_path)
-        shutil.move(old_image_h5_path,new_image_h5_path)
-        shutil.move(old_image_mask_tif_math,new_image_mask_tif_math)
-        print(path_folder)
-        print(">",new_image_tif_path)
-        print(">",new_image_h5_path)
-        print(">",new_image_mask_tif_math)
+        path_image_temp = abs_path_image_tif[ix]
+        image_temp = os.path.basename(path_image_temp)
+        head, _ = os.path.splitext(path_image_temp)
+        image_temp_name,_ =os.path.splitext(image_temp)
+        if os.path.isfile(head+'.h5'):
+            dico_image_temp[image_temp_name]=[path_image_temp,head+'.h5',head+'_result.png']
+            names.append(image_temp_name)
+    print('...done')
 
     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-    ######
-    
+
+    ########## Ranger les masques de segmentation dans une liste MASK et un dictionnaire Temp_L_M_dico
     MASK = []
-    for ix in os.listdir(output_dir.name):
-        path_temp = os.path.join(output_dir.name,ix)
-        for subfolder in os.listdir(path_temp):
-            path_file = os.path.join(path_temp,subfolder)
-            if path_file.endswith('result_type.png'):
-            # if path_file.endswith('result_type.tif'):
-                MASK.append(path_file)
-                
+    Temp_L_M_dico = {}
+    for k in dico_image_temp:
+        MASK.append(dico_image_temp[k][2])
+        Temp_L_M_dico[k]=dico_image_temp[k][2]
+    
+    ########## Ranger dans un dictionnaire les masques de segmentation en np.array et enregistrer en _result
+    # dico_dico = {}
+    # for iw in range(len(MASK)):
+    #     one_image = imread(MASK[iw])        
+    #     data = np.array(one_image)
+    #     #fond_image=np.where(data==85)
+    #     #bord=np.where(data==170)
+    #     #aphid=np.where(data==255)
+    #     #data[fond_image]=0
+    #     #data[bord]=255
+    #     #data[aphid]=255
+
+    #     #data_fill = ndi.binary_fill_holes(data).astype(int)
+
+    #     #data = np.array(data_fill)
+    #     #fond_image=np.where(data==0)
+    #     #aphid=np.where(data==1)
+    #     #data[fond_image]=0
+    #     #data[aphid]=255
+        
+    #     head , extension = os.path.splitext(MASK[ix])
+    #     name_image = head.replace('_result_type','_result')+extension
+    #     # os.path.basename(final_temp)
+    #     # name_image = MASK[iw].split('\\')[-1].replace('_type','')[:-3]+'png'
+        
+    #     # image_with_two_classes = os.path.join('\\'.join(MASK[iw].split('\\')[:-1]),name_image) #new name for image with two classes
+    #     image_with_two_classes = name_image
+    #     dico_dico[image_with_two_classes]=data
+    #     plt.imsave(image_with_two_classes, data, cmap = plt.cm.gray)
     dico_dico = {}
-    for iw in range(len(MASK)):
-        one_image = imread(MASK[iw])
-        
-        data = np.array(one_image)
-        #fond_image=np.where(data==85)
-        #bord=np.where(data==170)
-        #aphid=np.where(data==255)
-        #data[fond_image]=0
-        #data[bord]=255
-        #data[aphid]=255
+    for ix in range(len(MASK)):
+        data = imread(MASK[ix])
+        dico_dico[MASK[ix]]=np.squeeze(data[:,:,0])
 
-        #data_fill = ndi.binary_fill_holes(data).astype(int)
-
-        #data = np.array(data_fill)
-        #fond_image=np.where(data==0)
-        #aphid=np.where(data==1)
-        #data[fond_image]=0
-        #data[aphid]=255
-        
-        name_image = MASK[iw].split('\\')[-1].replace('_type','')[:-3]+'png'
-        
-        image_with_two_classes = os.path.join('\\'.join(MASK[iw].split('\\')[:-1]),name_image) #new name for image with two classes
-        dico_dico[image_with_two_classes]=data
-        plt.imsave(image_with_two_classes, data, cmap = plt.cm.gray)
+        dico_dico[MASK[ix]]=data
+        plt.imsave(MASK[ix], data, cmap = plt.cm.gray)
     
     L = list(dico_dico.keys())    
+    M_dico = list(dico.keys())
+    Temp_L_M_dico = {}
+    for ix,iy in zip(M_dico,L):
+        Temp_L_M_dico[ix]=iy
     
     dico = {}
     for iw in range(len(L)):
@@ -513,7 +564,54 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), np.uint8)
         dico[L[iw]] = [contours,hull]
     
+    # dico_out = {}
+    # for iw in dico.keys():
+    #     L = dico[iw]
+    #     contours = L[0]
+    #     hull = L[1]
+
+    #     area_hull_list = []
+    #     area_contour_list = []
+    #     diff = []
+
+    #     for i in range(len(contours)):
+    #         new_list_hull = []
+    #         for ix in range(len(hull[i])):
+    #             new_list_hull.append(list(hull[i][ix][0]))
+
+    #         new_list_contours = []
+    #         for ix in range(len(contours[i])):
+    #             new_list_contours.append(list(contours[i][ix][0]))
+
+    #         area_of_hull = PolyArea2D(new_list_hull)
+    #         area_of_contour = PolyArea2D(new_list_contours)
+    #         area_hull_list.append(area_of_hull)
+    #         area_contour_list.append(area_of_contour)
+    #         diff.append(area_of_hull-area_of_contour)
+
+    #     mean_area_aphid = np.mean(area_hull_list)
+
+    #     OUT_value = []
+    #     for i in range(len(diff)):
+    #         if area_hull_list[i] > mean_area_aphid:
+    #             if diff[i]/area_hull_list[i] > 0.2:
+    #                 OUT_value.append([i,diff[i]])
+ 
+    #     M = [np.mean(diff) for _ in range(len(diff))]
+    #     limit_moyenne_value = np.mean(diff)*3
+
+    #     OUT_value_y = [OUT_value[i][1] for i in range(len(OUT_value))]
+    #     OUT_value_x = [OUT_value[i][0] for i in range(len(OUT_value))]
+
+    #     M = [np.mean(diff) for _ in range(len(diff))]
+        
+    #     if OUT_value!=[]:
+    #         dico_out[iw] = OUT_value           
+            
     dico_out = {}
+    dico_size = {}
+
+    #for iw in dico.keys():
     for iw in dico.keys():
         L = dico[iw]
         contours = L[0]
@@ -538,6 +636,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
             area_contour_list.append(area_of_contour)
             diff.append(area_of_hull-area_of_contour)
 
+        dico_size[iw]=area_contour_list            
         mean_area_aphid = np.mean(area_hull_list)
 
         OUT_value = []
@@ -545,22 +644,19 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
             if area_hull_list[i] > mean_area_aphid:
                 if diff[i]/area_hull_list[i] > 0.2:
                     OUT_value.append([i,diff[i]])
- 
+
         M = [np.mean(diff) for _ in range(len(diff))]
         limit_moyenne_value = np.mean(diff)*3
 
         OUT_value_y = [OUT_value[i][1] for i in range(len(OUT_value))]
         OUT_value_x = [OUT_value[i][0] for i in range(len(OUT_value))]
-
         M = [np.mean(diff) for _ in range(len(diff))]
         
         if OUT_value!=[]:
-            dico_out[iw] = OUT_value           
+            dico_out[iw] = OUT_value
             
     L1 = list(dico_out.keys())
-    print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<",L1)
-    names =  []
-
+    print("PROCESSING IMAGE OVERLAPPED")
     for ix in range(len(L1)):
         ###########################
 
@@ -597,22 +693,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         r = x**2 + y**2
         se = r < radius**2
         im3 = ndimage.binary_opening(image, se)
-
-        # data_fill = ndi.binary_fill_holes(stud_image_eros).astype(int)        
-        # data_bigger_m = np.array(data_fill)
-        
-        # data_bigger_m = np.array(stud_image_eros)
-        # fond_image=np.where(data_bigger_m==0)
-        # aphid=np.where(data_bigger_m!=0)
-        # data_bigger_m[fond_image]=0
-        # data_bigger_m[aphid]=255 
-        
-        # OUTPUT = data_bigger_m
-
-        #FIXER LE SEUIL
-        # INPUT = data_bigger_m
-
-        # img = data_bigger_m
         
         img = im3
 
@@ -625,7 +705,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         X = np.arange(len(Y))
 
         ### Application de la moyenne
-
         A_moy = []
         moy_m = np.mean(Y1)
         for i in range(len(Y1)):
@@ -637,12 +716,9 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         A_moy_np = np.array(A_moy)
 
         classe2_m = Y1[A_moy_np == 1]
-
         # OUTPUT = classe2_m
 
         ### Enlever les petits morceaux
-        # INPUT = img et classe2_m
-
         bigger_m = np.zeros_like(img)         
         for R in regionprops(labels):
             if R.area in classe2_m:
@@ -654,45 +730,173 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         aphid=np.where(data_bigger_m_m!=0)
         data_bigger_m_m[fond_image]=0
         data_bigger_m_m[aphid]=255                     
-                    
-        # OUTPUT = data_bigger_m_m
-        
-        # ML_Ml.append([nom_image,data_bigger_m_m])
-        # names.append(L1[ix].split('\\')[-2])
-        nom_image = L1[ix].split('\\')[-2]
-        print("image :",nom_image)
 
-        names.append(nom_image)
         skimage.io.imsave(L1[ix], data_bigger_m_m)
+    # names =  []
+
+    # for ix in tqdm(range(len(L1))):
+    #     ###########################
+
+    #     path_image_for_wat = L1[ix]
+    #     one_image = np.squeeze(imread(path_image_for_wat))[:,:,0]
+    
+
+
+    #     img1 = cv2.imread(path_image_for_wat)
+    #     one_image = np.squeeze(img1)[:,:,0]
+
+    #     binary = np.asarray(one_image)
+    #     # typical way of using scikit-image watershed
+    #     distance = ndi.distance_transform_edt(binary)
+    #     sigma = 15
+    #     blurred_distance = gaussian_filter(distance,sigma=sigma)
+    #     fp = np.ones((3,) * binary.ndim)
+    #     coords = peak_local_max(blurred_distance, footprint=fp, labels=binary)
+    #     mask = np.zeros(distance.shape, dtype=bool)
+    #     mask[tuple(coords.T)] = True
+    #     markers = label(mask)
+    #     labels = watershed(-blurred_distance, markers, mask=binary)
+    #     # identify label-cutting edges
+    #     edges = sobel(labels)
+    #     edges2 = sobel(binary)
+    #     almost = np.logical_not(np.logical_xor(edges != 0, edges2 != 0)) * binary
+    #     img2 = binary_opening(almost)
+    #     image = erosion(img2)
+
+    #     diameter = 15
+    #     radius = diameter // 2
+    #     x = np.arange(-radius, radius+1)
+    #     x, y = np.meshgrid(x, x)
+    #     r = x**2 + y**2
+    #     se = r < radius**2
+    #     im3 = ndimage.binary_opening(image, se)
+
+    #     # data_fill = ndi.binary_fill_holes(stud_image_eros).astype(int)        
+    #     # data_bigger_m = np.array(data_fill)
+        
+    #     # data_bigger_m = np.array(stud_image_eros)
+    #     # fond_image=np.where(data_bigger_m==0)
+    #     # aphid=np.where(data_bigger_m!=0)
+    #     # data_bigger_m[fond_image]=0
+    #     # data_bigger_m[aphid]=255 
+        
+    #     # OUTPUT = data_bigger_m
+
+    #     #FIXER LE SEUIL
+    #     # INPUT = data_bigger_m
+
+    #     # img = data_bigger_m
+        
+    #     img = im3
+
+    #     labels = label(img)
+
+    #     A_temps = [R.area for R in regionprops(labels)]
+
+    #     Y = np.sort(A_temps) 
+    #     Y1 = np.array(Y)
+    #     X = np.arange(len(Y))
+
+    #     ### Application de la moyenne
+
+    #     A_moy = []
+    #     moy_m = np.mean(Y1)
+    #     for i in range(len(Y1)):
+    #         if Y1[i] > 1000:
+    #             A_moy.append(1)
+    #         else:
+    #             A_moy.append(0)
+
+    #     A_moy_np = np.array(A_moy)
+
+    #     classe2_m = Y1[A_moy_np == 1]
+
+    #     # OUTPUT = classe2_m
+
+    #     ### Enlever les petits morceaux
+    #     # INPUT = img et classe2_m
+
+    #     bigger_m = np.zeros_like(img)         
+    #     for R in regionprops(labels):
+    #         if R.area in classe2_m:
+    #             for c in R.coords:  
+    #                 bigger_m[c[0], c[1]] = 1  
+        
+    #     data_bigger_m_m = np.array(bigger_m)
+    #     fond_image=np.where(data_bigger_m_m==0)
+    #     aphid=np.where(data_bigger_m_m!=0)
+    #     data_bigger_m_m[fond_image]=0
+    #     data_bigger_m_m[aphid]=255                     
+                    
+    #     # OUTPUT = data_bigger_m_m
+        
+    #     # ML_Ml.append([nom_image,data_bigger_m_m])
+    #     # names.append(L1[ix].split('\\')[-2])
+    #     nom_image = L1[ix].split('\\')[-2]
+    #     print("image :",nom_image)
+
+    #     names.append(nom_image)
+    #     skimage.io.imsave(L1[ix], data_bigger_m_m)
+    
+    for ix in MASK:
+        if ix not in L1:    
+            path_image_for_wat = ix
+            one_image = np.squeeze(imread(path_image_for_wat))[:,:,0]
+                
+
+
+            img1 = cv2.imread(path_image_for_wat)
+            one_image = np.squeeze(img1)[:,:,0]
+            binary = np.asarray(one_image)
+
+            diameter = 15
+            radius = diameter // 2
+            x = np.arange(-radius, radius+1)
+            x, y = np.meshgrid(x, x)
+            r = x**2 + y**2
+            se = r < radius**2
+
+            im3 = ndimage.binary_opening(binary,se)
+            img = im3
+
+            data_bigger_m_m = np.array(img)
+            fond_image=np.where(data_bigger_m_m==0)
+            aphid=np.where(data_bigger_m_m!=0)
+            data_bigger_m_m[fond_image]=0
+            data_bigger_m_m[aphid]=255                     
+
+            skimage.io.imsave(path_image_for_wat, data_bigger_m_m)
+            
+    dico_image_temp_vis = {}
+    names = []
+    for ix in range(len(abs_path_image_tif)):
+        path_image_temp = abs_path_image_tif[ix]
+        image_temp = os.path.basename(path_image_temp)
+        head, _ = os.path.splitext(path_image_temp)
+        image_temp_name,_ =os.path.splitext(image_temp)
+        if os.path.isfile(head+'.h5'):
+            dico_image_temp_vis[image_temp_name]=[path_image_temp,head+'.h5',head+'_result.png']
+            names.append(image_temp_name)
 
     def open_name(item):
-        
+            
         name = item.text()
-        name_folder = name[:-4]
-
         
-        print('Loading', name, '...')
-
+        print('OPEN:',name)
+        
         napari_viewer.layers.select_all()
         napari_viewer.layers.remove_selected()    
-        fname = f'{output_dir.name}\{name}'
-        for fname_i in os.listdir(fname):
-            if fname_i.find('_result_type')==-1:
-                if fname_i.find('_result')!=-1:
-                    data_label = imread(f'{fname}\{fname_i}')
-                    data_label1 = np.array(data_label)       
-                    
-                    fond_image=np.where(data_label1==0)
-                    aphid=np.where(data_label1!=0)
-                    data_label1[fond_image]=0
-                    data_label1[aphid]=255     
-                    
-                    napari_viewer.add_labels(data_label1,name=f'{fname_i[:-4]}')
-                elif fname_i.endswith('.tif'):
-                    napari_viewer.add_image(imread(f'{fname}\{fname_i}'),name=f'{fname_i[:-4]}')
-
+            
+        RGB_name = os.path.basename(dico_image_temp[name][0])
+        data_RGB = imread(dico_image_temp[name][0])
+        label_name = os.path.basename(dico_image_temp[name][2])
+        data_label = np.array(imread(dico_image_temp[name][2]))
+        
+        shape_matrix = data_label.shape
+        napari_viewer.add_image(data_RGB,name=f'{RGB_name}')
+        napari_viewer.add_labels(data_label,name=f'{label_name}')
+        
         print('... done.')
-
 
     list_widget = QListWidget()
     for n in names:
@@ -703,11 +907,13 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     
 @magic_factory(call_button="save modification", layout="vertical")
 def save_modification(image_seg : napari.layers.Labels, image_raw : ImageData, napari_viewer : Viewer):
-    data_label = image_seg.data   
-    sousdossier = image_seg.name.split('_result')[0].replace('.','_')
-    nom_image = image_seg.name
-    os.remove(f'{output_dir.name}\{sousdossier}\{image_seg}.png')
-    imsave(f'{output_dir.name}\{sousdossier}\{image_seg}.png', img_as_uint(data_label))
+    data_label = image_seg.data
+    name_label = image_seg.name    
+    directory_tmp = os.listdir(zip_dir.name)[0]
+    lettre = name_label[0]    
+    path_to_data_label = os.path.join(zip_dir.name,directory_tmp,lettre,name_label)
+    os.remove(path_to_data_label)
+    imsave(path_to_data_label, img_as_uint(data_label))
 
 @magic_factory(call_button="Run classification",filename={"label": "Ilastik Object classification:"})
 def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path.cwd()): 
