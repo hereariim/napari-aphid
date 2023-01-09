@@ -10,6 +10,10 @@ from skimage.measure import label, regionprops_table, regionprops
 from skimage.io import imsave
 from skimage.segmentation import watershed
 from skimage.feature import peak_local_max
+from skimage.morphology import erosion
+from scipy.ndimage import gaussian_filter
+from skimage.morphology import binary_opening
+from skimage.filters import threshold_otsu as gaussian, sobel
 import skimage.io
 
 import os
@@ -360,17 +364,8 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         aphid=np.where(data!=0)
         data[fond_image]=0
         data[aphid]=255
-        
-        # data_fill = ndi.binary_fill_holes(data).astype(int)
-        
-        # data = np.array(data)
-        # fond_image=np.where(data==0)
-        # aphid=np.where(data!=0)
-        # data[fond_image]=0
-        # data[aphid]=255
 
         os.remove(path_image)
-        #imsave(path_image,data)
         path_image_new = path_image[:-4]+'.png'
         plt.imsave(path_image_new, data, cmap = plt.cm.gray)
     print('done')
@@ -560,7 +555,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         M = [np.mean(diff) for _ in range(len(diff))]
         
         if OUT_value!=[]:
-            dico_out[iw] = OUT_value
+            dico_out[iw] = OUT_value           
             
     L1 = list(dico_out.keys())
     print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<",L1)
@@ -575,48 +570,51 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
 
 
         img1 = cv2.imread(path_image_for_wat)
-        img = cv2.cvtColor(img1,cv2.COLOR_BGR2GRAY)
-        ret1, thresh = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        one_image = np.squeeze(img1)[:,:,0]
 
-        kernel = np.ones((3,3),np.uint8)
-        opening = cv2.morphologyEx(thresh,cv2.MORPH_OPEN,kernel, iterations = 2)    
-        opening = clear_border(opening)
-        sure_bg = cv2.dilate(opening,kernel,iterations=2)
-        dist_transform = cv2.distanceTransform(opening,cv2.DIST_L2,3)
-        ret2, sure_fg = cv2.threshold(dist_transform,0.2*dist_transform.max(),255,0)
-        sure_fg = np.uint8(sure_fg)
-        unknown = cv2.subtract(sure_bg,sure_fg)
-        ret3, markers = cv2.connectedComponents(sure_fg)
-        markers = markers+10
-        markers[unknown==255] = 0
-        markers = cv2.watershed(img1,markers)
-        img1[markers == -1] = [0,255,255]  
-        # img2 = color.label2rgb(markers, bg_label=0)
-        # OUTPUT = img1
+        binary = np.asarray(one_image)
+        # typical way of using scikit-image watershed
+        distance = ndi.distance_transform_edt(binary)
+        sigma = 15
+        blurred_distance = gaussian_filter(distance,sigma=sigma)
+        fp = np.ones((3,) * binary.ndim)
+        coords = peak_local_max(blurred_distance, footprint=fp, labels=binary)
+        mask = np.zeros(distance.shape, dtype=bool)
+        mask[tuple(coords.T)] = True
+        markers = label(mask)
+        labels = watershed(-blurred_distance, markers, mask=binary)
+        # identify label-cutting edges
+        edges = sobel(labels)
+        edges2 = sobel(binary)
+        almost = np.logical_not(np.logical_xor(edges != 0, edges2 != 0)) * binary
+        img2 = binary_opening(almost)
+        image = erosion(img2)
 
-        #ENLEVER LES REGIONS    
-        # INPUT = img1
-
-        stud_image = np.squeeze(img1[:,:,0])
-        shape_image = stud_image.shape
-        kernel = np.ones((3, 3), np.uint8)
-        stud_image_eros = cv2.erode(stud_image, kernel) 
+        diameter = 15
+        radius = diameter // 2
+        x = np.arange(-radius, radius+1)
+        x, y = np.meshgrid(x, x)
+        r = x**2 + y**2
+        se = r < radius**2
+        im3 = ndimage.binary_opening(image, se)
 
         # data_fill = ndi.binary_fill_holes(stud_image_eros).astype(int)        
         # data_bigger_m = np.array(data_fill)
         
-        data_bigger_m = np.array(stud_image_eros)
-        fond_image=np.where(data_bigger_m==0)
-        aphid=np.where(data_bigger_m!=0)
-        data_bigger_m[fond_image]=0
-        data_bigger_m[aphid]=255 
+        # data_bigger_m = np.array(stud_image_eros)
+        # fond_image=np.where(data_bigger_m==0)
+        # aphid=np.where(data_bigger_m!=0)
+        # data_bigger_m[fond_image]=0
+        # data_bigger_m[aphid]=255 
         
         # OUTPUT = data_bigger_m
 
         #FIXER LE SEUIL
         # INPUT = data_bigger_m
 
-        img = data_bigger_m
+        # img = data_bigger_m
+        
+        img = im3
 
         labels = label(img)
 
@@ -631,7 +629,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         A_moy = []
         moy_m = np.mean(Y1)
         for i in range(len(Y1)):
-            if Y1[i] > moy_m:
+            if Y1[i] > 1000:
                 A_moy.append(1)
             else:
                 A_moy.append(0)
