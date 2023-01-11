@@ -78,6 +78,11 @@ import time
 import threading
 import queue
 
+from matplotlib.widgets import LassoSelector
+from matplotlib.path import Path
+from matplotlib.backends.backend_qt5agg import FigureCanvas
+from matplotlib.figure import Figure
+
 
 zip_dir = tempfile.TemporaryDirectory()
 
@@ -103,7 +108,110 @@ class MyProcess(threading.Thread):
         print(f"IMG {filename} = {np.round(end_process-start_process,2)} second")
         # os.remove(filename+'_result_type'+file_extension)
 
+class SelectFromCollection:
 
+    def __init__(self, parent, ax, collection, pd_df, napari_viewer, alpha_other=0.3):
+        self.canvas = ax.figure.canvas
+        self.parent = parent
+        self.collection = collection
+        self.alpha_other = alpha_other
+
+        self.xys = collection.get_offsets()
+        self.Npts = len(self.xys)
+        
+        self.pandas_data_frame = pd_df
+
+        # Ensure that we have separate colors for each object
+        self.fc = collection.get_facecolors()
+        if len(self.fc) == 0:
+            raise ValueError("Collection must have a facecolor")
+        elif len(self.fc) == 1:
+            self.fc = np.tile(self.fc, (self.Npts, 1))
+
+        self.lasso = LassoSelector(ax, onselect=self.onselect, button=1)
+        self.napari_viewer = napari_viewer
+        self.ind = []
+        self.ind_mask = []
+        self.DOCK_widget_list_image_selected = []
+
+    def onselect(self, verts):
+        path = Path(verts)
+        self.ind = np.nonzero(path.contains_points(self.xys))[0]
+        self.ind_mask = path.contains_points(self.xys)
+        self.fc[:, -1] = self.alpha_other
+        self.fc[self.ind, -1] = 1
+        self.collection.set_facecolors(self.fc)
+        self.canvas.draw_idle()
+        self.selected_coordinates = self.xys[self.ind].tolist()
+        if len(self.selected_coordinates)!=0:
+            multi_image_label = self.pandas_data_frame[self.pandas_data_frame['coord'].isin(self.selected_coordinates)][["image"]].values.tolist()
+            names_images_selected = list(np.unique(multi_image_label))
+            list_widget_for_images_selected = QListWidget()
+            for n in names_images_selected:
+                list_widget_for_images_selected.addItem(n)
+            dock_widget_im_slect = self.napari_viewer.window.add_dock_widget([list_widget_for_images_selected], area='bottom',name="")
+            self.DOCK_widget_list_image_selected.append(dock_widget_im_slect)
+            if len(self.DOCK_widget_list_image_selected)!=1:
+                self.napari_viewer.window.remove_dock_widget(self.DOCK_widget_list_image_selected[-2])
+            dock_widget_im_slect
+            list_widget_for_images_selected.setCurrentRow(0)  
+
+    def disconnect(self):
+        self.lasso.disconnect_events()
+        self.fc[:, -1] = 1
+        self.collection.set_facecolors(self.fc)
+        self.canvas.draw_idle()
+
+class MplCanvas(FigureCanvas):
+    def __init__(self, parent=None, width=7, height=4, manual_clustering_method=None):
+        self.fig = Figure(figsize=(width, height))
+        self.manual_clustering_method = manual_clustering_method
+
+        # changing color of axes background to napari main window color
+        self.fig.patch.set_facecolor("#262930")
+        self.axes = self.fig.add_subplot(111)
+
+        # changing color of plot background to napari main window color
+        self.axes.set_facecolor("#262930")
+
+        # changing colors of all axes
+        self.axes.spines["bottom"].set_color("white")
+        self.axes.spines["top"].set_color("white")
+        self.axes.spines["right"].set_color("white")
+        self.axes.spines["left"].set_color("white")
+        self.axes.xaxis.label.set_color("white")
+        self.axes.yaxis.label.set_color("white")
+
+        # changing colors of axes labels
+        self.axes.tick_params(axis="x", colors="white")
+        self.axes.tick_params(axis="y", colors="white")
+
+        super().__init__(self.fig)
+        self.pd_df = {'IDimage':[],'image':[],'coord':[]}
+        self.pts = self.axes.scatter([], [])
+        self.napari_viewer = None
+        self.selector = SelectFromCollection(self, self.axes, self.pts,self.pd_df, self.napari_viewer)
+        self.reset()
+
+    def draw_rectangle(self, eclick, erelease):
+        """eclick and erelease are the press and release events"""
+        x0, y0 = eclick.xdata, eclick.ydata
+        x1, y1 = erelease.xdata, erelease.ydata
+        self.xys = self.pts.get_offsets()
+        min_x = min(x0, x1)
+        max_x = max(x0, x1)
+        min_y = min(y0, y1)
+        max_y = max(y0, y1)
+        self.rect_ind_mask = [
+            min_x <= x <= max_x and min_y <= y <= max_y
+            for x, y in zip(self.xys[:, 0], self.xys[:, 1])
+        ]
+        if self.manual_clustering_method is not None:
+            self.manual_clustering_method(self.rect_ind_mask)
+
+    def reset(self):
+        self.axes.clear()
+        self.is_pressed = None
 
 def PolyArea2D(pts):
     lines = np.hstack([pts,np.roll(pts,-1,axis=0)])
@@ -138,139 +246,7 @@ def table_to_widget(table: dict) -> QWidget:
     widget.layout().addWidget(view.native)
 
     return widget
-
-def get_quantitative_data(image, napari_viewer):
-    img=image
-    seuil=25
-
-    connidie=np.where(img==1)
-    hyphe=np.where(img==2)
-    img[connidie]=0
-
-    labels_mask = measure.label(img, background=0) # Solution venant de stackoverflow, Mesure les differents elements                       
-    regions = measure.regionprops(labels_mask)
-    regions.sort(key=lambda x: x.area, reverse=False) 
-
-    print(">",len(hyphe[0]))
-    print(">",len(connidie[0]))
-    
-    minus=0
-    for rg in regions:
-        if len(rg.coords[:,0])>seuil:
-            print(">",len(regions)-minus)
-            break
-        else: 
-            minus+=1    
-    d = {'nombre dhyphes': [len(regions)-minus], 'hyphe': [len(hyphe[0])], 'connidie': [len(connidie[0])]}
-
-    dock_widget = table_to_widget(d)
-    napari_viewer.window.add_dock_widget(dock_widget, area='right')
-    
-def quantitative_data_for_all(dictionnaire,napari_viewer):
-    A = [] #sous dossier
-    B = [] #nom image
-    C = []
-    D = []
-    E = []
-    for ix in dictionnaire.keys():
-        img=dictionnaire[ix]
-        seuil=25
-
-        connidie=np.where(img==1)
-        hyphe=np.where(img==2)
-        img[connidie]=0
-
-        labels_mask = measure.label(img, background=0) # Solution venant de stackoverflow, Mesure les differents elements                       
-        regions = measure.regionprops(labels_mask)
-        regions.sort(key=lambda x: x.area, reverse=False) 
-
-        print(">",len(hyphe[0]))
-        print(">",len(connidie[0]))
-        
-        minus=0
-        for rg in regions:
-            if len(rg.coords[:,0])>seuil:
-                print(">",len(regions)-minus)
-                name_xx = ix.split('xx')
-                A.append(name_xx[0])
-                B.append(name_xx[1])
-                C.append(len(regions)-minus)
-                D.append(len(hyphe[0]))
-                E.append(len(connidie[0]))
-                break
-            else: 
-                minus+=1    
-
-    d = {'sous dossier':A,'nom image':B,'nombre dhyphes': C, 'hyphe': D, 'connidie': E}
-    dock_widget = table_to_widget(d)
-    napari_viewer.window.add_dock_widget(dock_widget, area='right')
-    
-    
-    
-def get_quantitative_data_all_for_csv(dossier_des_images,napari_viewer):
-    A = [] 
-    B = []
-    C = []
-    D = []
-    E = []
-    
-    dictionnaire = {}
-    
-    for ix in os.listdir(dossier_des_images):
-        chemin_dans_sousdossier = os.path.join(dossier_des_images,ix)
-        if len(os.listdir(chemin_dans_sousdossier))!=0:
-            for iy in os.listdir(chemin_dans_sousdossier):
-                if iy.find("result")!=-1:
-                    data_dico=imread(os.path.join(chemin_dans_sousdossier,iy))
-                    print("chemin sous dossier",os.path.join(chemin_dans_sousdossier,iy))
-                    dictionnaire[iy]=data_dico
-
-    for ix in dictionnaire.keys():
-        img=dictionnaire[ix]
-        seuil=25
-
-        connidie=np.where(img==1)
-        hyphe=np.where(img==2)
-        img[connidie]=0
-
-        labels_mask = measure.label(img, background=0) # Solution venant de stackoverflow, Mesure les differents elements                       
-        regions = measure.regionprops(labels_mask)
-        regions.sort(key=lambda x: x.area, reverse=False) 
-        
-        minus=0
-        for rg in regions:
-            if len(rg.coords[:,0])>seuil:
-                name_xx = ix.split('xx')
-                A.append(name_xx[0])
-                B.append(name_xx[1][:-4])
-                C.append(len(regions)-minus)
-                D.append(len(hyphe[0]))
-                E.append(len(connidie[0]))
-                break
-            else: 
-                minus+=1    
-
-    d = {'sous dossier':A,'nom image':B,'nombre dhyphes': C, 'hyphe': D, 'connidie': E}
-
-    dock_widget = table_to_widget(d)
-    napari_viewer.window.add_dock_widget(dock_widget, area='right',name="Save")
-    
-def define_marker(labels):
-    n,m = labels.shape
-    for ij in range(n):
-        lit_temp=labels[ij]
-        i=0
-        while i<(len(lit_temp)-1):
-            x = lit_temp[i]
-            y = lit_temp[i+1]
-            if x!=y:
-                if x!=0:
-                    if y!=0:
-                        lit_temp[i]=0
-                        lit_temp[i+1]=0
-            i+=1
-    return labels
-        
+       
 output_dir = tempfile.TemporaryDirectory()
 zip_dir = tempfile.TemporaryDirectory()
     
@@ -278,8 +254,6 @@ zip_dir = tempfile.TemporaryDirectory()
 def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.cwd(),filename2=pathlib.Path.cwd()): 
     
     filename2 = str(filename2)
-    
-    # zip_dir = tempfile.TemporaryDirectory()
 
     with ZipFile(filename,'r') as zipObject:
         listOfFileNames = zipObject.namelist()        
@@ -452,30 +426,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         # create an empty black image
         drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), np.uint8)
         dico[SEG[iw]] = [contours,hull]
-    
-    # for ix in range(len(SEG)):
-    #     path_image = SEG[ix]
-    #     img = imread(path_image)
-    #     img = np.squeeze(img[:,:,0])
-
-    #     bigger = np.zeros_like(img)
-    #     labels = label(img)
-
-    #     A_temps = [R.area for R in regionprops(labels)]
-
-    #     Y = np.sort(A_temps) 
-    #     Y1 = np.array(Y)
-
-    #     classe1 = Y1[Y1 <= np.mean(Y)]
-    #     classe2 = Y1[Y1 > np.mean(Y)]
-
-    #     for R in regionprops(labels):
-    #         if R.area in classe2:
-    #             for c in R.coords:  
-    #                 bigger[c[0], c[1]] = 1
-        
-    #     os.remove(path_image)
-    #     plt.imsave(path_image, bigger, cmap = plt.cm.gray)
         
     ########## Ranger les images dans un seul dictionnaire
     
@@ -503,34 +453,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         Temp_L_M_dico[k]=dico_image_temp[k][2]
     
     ########## Ranger dans un dictionnaire les masques de segmentation en np.array et enregistrer en _result
-    # dico_dico = {}
-    # for iw in range(len(MASK)):
-    #     one_image = imread(MASK[iw])        
-    #     data = np.array(one_image)
-    #     #fond_image=np.where(data==85)
-    #     #bord=np.where(data==170)
-    #     #aphid=np.where(data==255)
-    #     #data[fond_image]=0
-    #     #data[bord]=255
-    #     #data[aphid]=255
-
-    #     #data_fill = ndi.binary_fill_holes(data).astype(int)
-
-    #     #data = np.array(data_fill)
-    #     #fond_image=np.where(data==0)
-    #     #aphid=np.where(data==1)
-    #     #data[fond_image]=0
-    #     #data[aphid]=255
-        
-    #     head , extension = os.path.splitext(MASK[ix])
-    #     name_image = head.replace('_result_type','_result')+extension
-    #     # os.path.basename(final_temp)
-    #     # name_image = MASK[iw].split('\\')[-1].replace('_type','')[:-3]+'png'
-        
-    #     # image_with_two_classes = os.path.join('\\'.join(MASK[iw].split('\\')[:-1]),name_image) #new name for image with two classes
-    #     image_with_two_classes = name_image
-    #     dico_dico[image_with_two_classes]=data
-    #     plt.imsave(image_with_two_classes, data, cmap = plt.cm.gray)
     dico_dico = {}
     for ix in range(len(MASK)):
         data = imread(MASK[ix])
@@ -564,54 +486,9 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         drawing = np.zeros((thresh_img.shape[0], thresh_img.shape[1], 3), np.uint8)
         dico[L[iw]] = [contours,hull]
     
-    # dico_out = {}
-    # for iw in dico.keys():
-    #     L = dico[iw]
-    #     contours = L[0]
-    #     hull = L[1]
-
-    #     area_hull_list = []
-    #     area_contour_list = []
-    #     diff = []
-
-    #     for i in range(len(contours)):
-    #         new_list_hull = []
-    #         for ix in range(len(hull[i])):
-    #             new_list_hull.append(list(hull[i][ix][0]))
-
-    #         new_list_contours = []
-    #         for ix in range(len(contours[i])):
-    #             new_list_contours.append(list(contours[i][ix][0]))
-
-    #         area_of_hull = PolyArea2D(new_list_hull)
-    #         area_of_contour = PolyArea2D(new_list_contours)
-    #         area_hull_list.append(area_of_hull)
-    #         area_contour_list.append(area_of_contour)
-    #         diff.append(area_of_hull-area_of_contour)
-
-    #     mean_area_aphid = np.mean(area_hull_list)
-
-    #     OUT_value = []
-    #     for i in range(len(diff)):
-    #         if area_hull_list[i] > mean_area_aphid:
-    #             if diff[i]/area_hull_list[i] > 0.2:
-    #                 OUT_value.append([i,diff[i]])
- 
-    #     M = [np.mean(diff) for _ in range(len(diff))]
-    #     limit_moyenne_value = np.mean(diff)*3
-
-    #     OUT_value_y = [OUT_value[i][1] for i in range(len(OUT_value))]
-    #     OUT_value_x = [OUT_value[i][0] for i in range(len(OUT_value))]
-
-    #     M = [np.mean(diff) for _ in range(len(diff))]
-        
-    #     if OUT_value!=[]:
-    #         dico_out[iw] = OUT_value           
-            
     dico_out = {}
     dico_size = {}
 
-    #for iw in dico.keys():
     for iw in dico.keys():
         L = dico[iw]
         contours = L[0]
@@ -732,111 +609,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         data_bigger_m_m[aphid]=255                     
 
         skimage.io.imsave(L1[ix], data_bigger_m_m)
-    # names =  []
-
-    # for ix in tqdm(range(len(L1))):
-    #     ###########################
-
-    #     path_image_for_wat = L1[ix]
-    #     one_image = np.squeeze(imread(path_image_for_wat))[:,:,0]
-    
-
-
-    #     img1 = cv2.imread(path_image_for_wat)
-    #     one_image = np.squeeze(img1)[:,:,0]
-
-    #     binary = np.asarray(one_image)
-    #     # typical way of using scikit-image watershed
-    #     distance = ndi.distance_transform_edt(binary)
-    #     sigma = 15
-    #     blurred_distance = gaussian_filter(distance,sigma=sigma)
-    #     fp = np.ones((3,) * binary.ndim)
-    #     coords = peak_local_max(blurred_distance, footprint=fp, labels=binary)
-    #     mask = np.zeros(distance.shape, dtype=bool)
-    #     mask[tuple(coords.T)] = True
-    #     markers = label(mask)
-    #     labels = watershed(-blurred_distance, markers, mask=binary)
-    #     # identify label-cutting edges
-    #     edges = sobel(labels)
-    #     edges2 = sobel(binary)
-    #     almost = np.logical_not(np.logical_xor(edges != 0, edges2 != 0)) * binary
-    #     img2 = binary_opening(almost)
-    #     image = erosion(img2)
-
-    #     diameter = 15
-    #     radius = diameter // 2
-    #     x = np.arange(-radius, radius+1)
-    #     x, y = np.meshgrid(x, x)
-    #     r = x**2 + y**2
-    #     se = r < radius**2
-    #     im3 = ndimage.binary_opening(image, se)
-
-    #     # data_fill = ndi.binary_fill_holes(stud_image_eros).astype(int)        
-    #     # data_bigger_m = np.array(data_fill)
-        
-    #     # data_bigger_m = np.array(stud_image_eros)
-    #     # fond_image=np.where(data_bigger_m==0)
-    #     # aphid=np.where(data_bigger_m!=0)
-    #     # data_bigger_m[fond_image]=0
-    #     # data_bigger_m[aphid]=255 
-        
-    #     # OUTPUT = data_bigger_m
-
-    #     #FIXER LE SEUIL
-    #     # INPUT = data_bigger_m
-
-    #     # img = data_bigger_m
-        
-    #     img = im3
-
-    #     labels = label(img)
-
-    #     A_temps = [R.area for R in regionprops(labels)]
-
-    #     Y = np.sort(A_temps) 
-    #     Y1 = np.array(Y)
-    #     X = np.arange(len(Y))
-
-    #     ### Application de la moyenne
-
-    #     A_moy = []
-    #     moy_m = np.mean(Y1)
-    #     for i in range(len(Y1)):
-    #         if Y1[i] > 1000:
-    #             A_moy.append(1)
-    #         else:
-    #             A_moy.append(0)
-
-    #     A_moy_np = np.array(A_moy)
-
-    #     classe2_m = Y1[A_moy_np == 1]
-
-    #     # OUTPUT = classe2_m
-
-    #     ### Enlever les petits morceaux
-    #     # INPUT = img et classe2_m
-
-    #     bigger_m = np.zeros_like(img)         
-    #     for R in regionprops(labels):
-    #         if R.area in classe2_m:
-    #             for c in R.coords:  
-    #                 bigger_m[c[0], c[1]] = 1  
-        
-    #     data_bigger_m_m = np.array(bigger_m)
-    #     fond_image=np.where(data_bigger_m_m==0)
-    #     aphid=np.where(data_bigger_m_m!=0)
-    #     data_bigger_m_m[fond_image]=0
-    #     data_bigger_m_m[aphid]=255                     
-                    
-    #     # OUTPUT = data_bigger_m_m
-        
-    #     # ML_Ml.append([nom_image,data_bigger_m_m])
-    #     # names.append(L1[ix].split('\\')[-2])
-    #     nom_image = L1[ix].split('\\')[-2]
-    #     print("image :",nom_image)
-
-    #     names.append(nom_image)
-    #     skimage.io.imsave(L1[ix], data_bigger_m_m)
     
     for ix in MASK:
         if ix not in L1:    
@@ -916,451 +688,339 @@ def save_modification(image_seg : napari.layers.Labels, image_raw : ImageData, n
     imsave(path_to_data_label, img_as_uint(data_label))
 
 @magic_factory(call_button="Run classification",filename={"label": "Ilastik Object classification:"})
-def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path.cwd()): 
-    path_folder = output_dir.name
-    L = os.listdir(path_folder)
-    image_path = [os.path.join(path_folder,ix) for ix in L]
-    print(">>>>>>>>>>>>", image_path)
+def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path.cwd()):
+    temp_file = zip_dir.name
+    folder_in_temp = os.listdir(temp_file)[0]
+    path_to_folder = os.path.join(temp_file,folder_in_temp,'')
     
-    ####################################
-    raw_data_set = []
-    segmentation_image_set = []
-    raw_data_tif_set = []
-    for ix in range(len(image_path)):
-        image_set = image_path[ix]
-        for ix_file in os.listdir(image_set):
-            if ix_file.endswith('.h5'):
-                raw_data_set.append(os.path.join(image_set,ix_file))
-            if ix_file.endswith('_result.png'):
-                segmentation_image_set.append(os.path.join(image_set,ix_file))
-            if ix_file.endswith('.tif') and ix_file.find('_result_type')==-1:
-                raw_data_tif_set.append(os.path.join(image_set,ix_file))
-    ####################################
-    for ix in range(len(segmentation_image_set)):
-        path_image = segmentation_image_set[ix] 
-        img = skimage.io.imread(path_image)
-
-        gxg = img.shape
-        if len(gxg)==3:
-            data_fill = ndi.binary_fill_holes(np.squeeze(img[:,:,0])).astype(int)
-        else:
-            data_fill = ndi.binary_fill_holes(img).astype(int)
-        data = np.array(data_fill)
-        fond_image=np.where(data==0)
-        aphid=np.where(data!=0)
-        data[fond_image]=0
-        data[aphid]=255
-
-        os.remove(path_image)
-        #imsave(path_image,data)
-        path_image_new = path_image[:-4]+'.png'
-        plt.imsave(path_image_new, data, cmap = plt.cm.gray)
-    ####################################
-    # path_image = segmentation_image_set[5]
-    # img = skimage.io.imread(path_image)
-    # img1 = np.squeeze(img[:,:,0])
-    # labels = label(img1)
-    # A_temps = [R.area for R in regionprops(labels)]
-    # print(A_temps)
-
-    # Y = np.sort(A_temps)
-    # Y1 = np.array(Y)
-    # classe2 = Y1[Y1 > 10]
-
-    # for R in regionprops(labels):
-    #     if R.area in classe2:
-    #         for c in R.coords:  
-    #             print(R.area,c[0],c[1])
-    # plt.imshow(img)
-    ####################################
-    #for i,j in trange(zip(raw_data_set,segmentation_image_set),total=len(raw_data_set)):
+    subprocess.run(['C:/Users/User/Fiji.app/ImageJ-win64.exe','--headless','--console','-macro','C:/Users/User/RunBatch.ijm',path_to_folder])
     
-    # projet_path = '--project="C:/Users/User/sergio_plugin/classification_simpseg_datad.ilp"'
-    projet_path = '--project='+filename
+    RAW_H5 = []
+    SEG_H5 = []
+    for ix in os.listdir(path_to_folder):
+        path_sub = os.path.join(path_to_folder,ix)
+        for iy in os.listdir(path_sub):
+            if iy.endswith('.h5'):
+                path_file = os.path.join(path_sub,iy)
+                if path_file.find('_result')==-1:
+                    RAW_H5.append(path_file)
+                else:
+                    SEG_H5.append(path_file)
 
-    fpath = ""
-    for ix in os.listdir(os.environ["ProgramFiles"]):
-        if ix.startswith('ilastik'):
-            fpath = os.path.join(os.environ["ProgramFiles"],ix)
-            break
-
-    try:
-        ilastik_path = ""
-        for ix in os.listdir(fpath):
-            if ix.endswith('.exe') and ix.startswith("ilastik"):
-                ilastik_path = os.path.join(fpath,ix)
-                break
-    except FileNotFoundError:
-        print("Ilastik folder not found in :",os.environ["ProgramFiles"])
-    except:
-        print("Search task failed")
-
-    if os.path.isfile(ilastik_path):
-        print(f"{ix} found")
-    else:
-        print("ilastik.exe not found in :",fpath)
-    
-    for i in trange(len(raw_data_set)):
+    dico_obj_class = {}
+    for rgb_h5,seg_h5 in zip(RAW_H5,SEG_H5):
+        fichier_image = os.path.basename(rgb_h5)
+        head,_ = os.path.splitext(fichier_image)
+        prefx,_ = os.path.splitext(rgb_h5)
+        dico_obj_class[head] = [rgb_h5,seg_h5,prefx+'.csv']
         
-        path_label = raw_data_set[i].split('\\')
-        path_ = '\\'.join(path_label[:-1]).replace('\\','/')
-        nom = path_label[-2]
+    sub_list_h5 = []
+    A_list_h5 = []
+    ctp = 0
+    for ix in list(dico_obj_class.keys()): 
+        if len(A_list_h5)==5:
+            sub_list_h5.append(A_list_h5)
+            A_list_h5 = []
+            A_list_h5.append(ix)
+            ctp+=1
+        else:
+            A_list_h5.append(ix)
+    s=0
+    for ix in sub_list_h5:
+        s+=len(ix)
+    if s!=len(list(dico_obj_class.keys())):
+        sub_list_h5.append(A_list_h5)
+        
+    import time
+    start_time = time.time()
+    queueLock = threading.Lock()
+    workQueue = queue.Queue(10)
+    
+    class_path_ilastik = str(filename)
+    
+    SEG = []
+    threads_list = []
+    for iy in tqdm(range(len(sub_list_h5)), desc= 'PROCESSING'):
+        list_to_work = sub_list_h5[iy]
+        for path_ix in range(len(list_to_work)):
+            im_h5 = list_to_work[path_ix]
+            thread = MyProcess(im_h5,class_path_ilastik,workQueue)
+            thread.start()
+            threads_list.append(thread)
 
-        table_filename_path = '--table_filename="'+path_+'/exported_'+nom+'.csv"'
-        raw_image = '--raw_data="'+raw_data_set[i].replace('\\','/')+'"'
-        seg_image = '--segmentation_image="'+segmentation_image_set[i].replace('\\','/')+'"'
+            # filename, file_extension = os.path.splitext(im_h5)
+            # image_name = os.path.basename(filename)
+            # SEG.append(os.path.join(output_dir.name,image_name+'_result_type.tif'))
 
-        subprocess.run([ilastik_path,
-                                '--headless',
-                                projet_path,
-                                '--export_source=Object Predictions',
-                                raw_image,
-                                seg_image,
-                                table_filename_path])
+        queueLock.acquire()
+        for word in list_to_work:
+            name_image = os.path.basename(word)
+            workQueue.put(name_image)
+        queueLock.release()
 
-        # subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
-        #                         '--headless',
-        #                         projet_path,
-        #                         '--export_source=Object Predictions',
-        #                         raw_image,
-        #                         seg_image,
-        #                         table_filename_path])
-    ####################################
-    #delete images output of classification
-    print(raw_data_set)
-    for i in range(len(image_path)):
-        L_temp = os.listdir(image_path[i])
-        L_h5 = [ix for ix in L_temp if ix.endswith('.h5')]
-        for j in L_h5:
-            un_lien = os.path.join(image_path[i],j)
-            if un_lien not in raw_data_set:
-                print(un_lien)
-                os.remove(un_lien)
-                
-    # Ranger les tableaux dans une liste
+        while not workQueue.empty():
+            pass
 
-    TABLE_PATH = []
-    for i in trange(len(raw_data_set)):   
-        path_label = raw_data_set[i].split('\\')
-        path_ = '\\'.join(path_label[:-1]).replace('\\','/')
-        nom = path_label[-2]
-        table_name_path = path_+'/exported_'+nom+'_table.csv'
-        print(table_name_path)
-        TABLE_PATH.append(table_name_path)
-    ####################################
-    def make_bbox(bbox_extents):
-        """Get the coordinates of the corners of a
-        bounding box from the extents
-        Parameters
-        ----------
-        bbox_extents : list (4xN)
-            List of the extents of the bounding boxes for each of the N regions.
-            Should be ordered: [min_row, min_column, max_row, max_column]
-        Returns
-        -------
-        bbox_rect : np.ndarray
-            The corners of the bounding box. Can be input directly into a
-            napari Shapes layer.
-        """
-        minr = bbox_extents[0]
-        minc = bbox_extents[1]
-        maxr = bbox_extents[2]
-        maxc = bbox_extents[3]
+        for t in threads_list:
+            t.join()
 
-        bbox_rect = np.array(
-            [[minr, minc], [maxr, minc], [maxr, maxc], [minr, maxc]]
-        )
-        bbox_rect = np.moveaxis(bbox_rect, 2, 0)
+    print(f"Total process time : {np.round(time.time() - start_time,2)} seconds")
+    
 
-        return bbox_rect
+    # for iy in tqdm(range(len(sub_list_h5))):
+    #     list_sub_h5_to_work = sub_list_h5[iy]
+    #     for path in list_sub_h5_to_work:
+    #         elements_of_file = dico_obj_class[path]
 
+    #         table_filename_path = '--table_filename='+elements_of_file[2]
+    #         raw_image = '--raw_data='+elements_of_file[0]
+    #         seg_image = '--segmentation_image='+elements_of_file[1]
 
+    #         subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
+    #                                 '--headless',
+    #                                 projet_path,
+    #                                 '--export_source=Object Predictions',
+    #                                 raw_image,
+    #                                 seg_image,
+    #                                 table_filename_path])        
+            
+    #         print(path,'..done')
+    # print('Total time processing:',time.time() - start_time, 'seconds')
+    
+    GET_PNG = []
+    GET_CSV = []
+    GET_TIF = []
+    GET_OC = []
+    for ix in os.listdir(path_to_folder):
+        path_sub = os.path.join(path_to_folder,ix)
+        for iy in os.listdir(path_sub):
+            path_of_iy = os.path.join(path_sub,iy)
+            if iy.endswith('.png') and iy.find('Object Predictions')==-1:
+                GET_PNG.append(path_of_iy)
+            if iy.endswith('.csv'):
+                GET_CSV.append(path_of_iy)
+            if iy.endswith('.tif'):
+                GET_TIF.append(path_of_iy)
+            if iy.find('Object Predictions')!=-1:
+                GET_OC.append(path_of_iy)
 
-    def table_to_widget(table: dict) -> QWidget:
+    dico_for_vis = {}
+    names = []
+    for ix,iy,iz,i0 in zip(GET_PNG,GET_CSV,GET_TIF,GET_OC):
+        name_file = os.path.basename(ix)
+        head,_ = os.path.splitext(name_file)
+        image_name = head.split('_result')[0]
+        names.append(image_name)
+        dico_for_vis[image_name]=[ix,iy,iz,i0]    
+    
+    ID_nom_image=[]
+    nomImage=[]
+    Label=[]
+    Size=[]
+    for ix in dico_for_vis:
+        tableau_im = dico_for_vis[ix][1]
+        df = pd.read_csv(tableau_im)
+
+        n= len(df['Predicted Class'])
+        ID_image_list = ['ID:'+str(iy)+'_'+ix for iy in np.arange(n)]
+        nomImage_list = [ix for iy in np.arange(n)]
+        class_predicted_list = df['Predicted Class']
+        size_pxl_list = df['Size in pixels']
+        
+        ID_nom_image = ID_nom_image + ID_image_list
+        nomImage = nomImage + nomImage_list
+        Label = Label + class_predicted_list.values.tolist()
+        Size = Size + size_pxl_list.values.tolist()
+
+    d = {'ID_image':ID_nom_image,'Image':nomImage,'Class':Label,'Size':Size}
+
+    df1 = pd.DataFrame(d)
+    df1_Apterous_adult = df1[df1['Class']=='Apterous adult']
+    df1_Larvae_Nymph_small = df1[df1['Class']=='Larvae/Nymph small']
+    df1_Larvae = df1[df1['Class']=='Larvae']
+    df1_Molt = df1[df1['Class']=='Molt']
+    df1_Nymph = df1[df1['Class']=='Nymph']    
+    
+    import pandas as pd
+    from skimage.io import imread
+
+    def table_to_widget(table: dict,path: str) -> QWidget:
         """
         Takes a table given as dictionary with strings as keys and numeric arrays as values and returns a QWidget which
         contains a QTableWidget with that data.
         """
         view = Table(value=table)
+        print(path)
+        export_button = QPushButton("Export")
 
-        copy_button = QPushButton("Copy to clipboard")
-
-        @copy_button.clicked.connect
+        @export_button.clicked.connect
         def copy_trigger():
-            view.to_dataframe().to_clipboard()
+            DATA_FRAME = []
+            for ix in os.listdir(temp_file):
+                path_1 = os.path.join(temp_file,ix)
+                for iy in os.listdir(path_1):
+                    path_2 = os.path.join(path_1,iy)
+                    for iz in os.listdir(path_2):
+                        if iz.endswith('csv'):
+                            head, _ = os.path.splitext(iz)
+                            name_image = head.split("_table")[0]
+                            path_3 = os.path.join(path_2,iz)
 
-        save_button = QPushButton("Save as csv...")
+                            df = pd.read_csv(path_3)
+                            n = len(df['object_id'])
+                            df['Country'] = [ix for iy in np.arange(n)]
+                            df['ID'] = ['ID:'+str(im) for im in np.arange(n)]
+                            df['Image'] = [name_image for im in np.arange(n)]
+                            DATA_FRAME.append(df)
+                            
+            pd_class = []
+            cty = []
+            id_obj = []
+            id_img = []
+            for idx in range(len(DATA_FRAME)):
+                pd_class = pd_class + DATA_FRAME[idx]['Predicted Class'].values.tolist()
+                cty = cty + DATA_FRAME[idx]['Country'].values.tolist()
+                id_obj = id_obj + DATA_FRAME[idx]['ID'].values.tolist()
+                id_img = id_img + DATA_FRAME[idx]['Image'].values.tolist()
+                
+            dico_final = {"Country":cty,"Image":id_img,"ID object":id_obj,"Class":pd_class}
+            df_final = pd.DataFrame(dico_final)
+            filename, _ = QFileDialog.getSaveFileName(save_button, "Export", ".", "*.csv")
+            df_final.to_csv(filename, index=False)
 
+        save_button = QPushButton("Save modification")
         @save_button.clicked.connect
         def save_trigger():
-            filename, _ = QFileDialog.getSaveFileName(save_button, "Save as csv...", ".", "*.csv")
-            view.to_dataframe().to_csv(filename)
+            un_tableau_csv_to_save = pd.read_csv(path)
+            un_tableau_csv_to_save['Predicted Class'] = view.to_dataframe()['class'].values.tolist()
+            un_tableau_csv_to_save.to_csv(path)
 
-        edit_button = QPushButton("Edit")
-        @edit_button.clicked.connect
-        def edit_trigger():
-            pass
-            
+
         widget = QWidget()
-        widget.setWindowTitle("region properties")
-        widget.setLayout(QGridLayout())
-        widget.layout().addWidget(copy_button)
+        widget.setWindowTitle("Prediction")
+        layout_qgrid=QGridLayout()
+        widget.setLayout(layout_qgrid)
+        widget.layout().addWidget(export_button)
         widget.layout().addWidget(save_button)
         widget.layout().addWidget(view.native)
-        widget.layout().addWidget(edit_button)
-
         return widget
 
-    # set up the annotation values and text display properties
-    box_annotations = ['Winged adult', 'Apterous adult', 'Nymph','Larvae','Larvae/Nymph small','Molt']
-    text_property = 'box_label'
-    text_color = 'green'
-
-    # create the GUI for selecting the values
-    def create_label_menu(shapes_layer, label_property, labels):
-        """Create a label menu widget that can be added to the napari viewer dock
-
-        Parameters:
-        -----------
-        shapes_layer : napari.layers.Shapes
-            a napari shapes layer
-        label_property : str
-            the name of the shapes property to use the displayed text
-        labels : List[str]
-            list of the possible text labels values.
-
-        Returns:
-        --------
-        label_widget : magicgui.widgets.Container
-            the container widget with the label combobox
-        """
-        # Create the label selection menu
-        label_menu = ComboBox(label='text label', choices=labels)
-        label_widget = Container(widgets=[label_menu])
-
-        def update_label_menu(event):
-            """This is a callback function that updates the label menu when
-            the current properties of the Shapes layer change
-            """
-            new_label = str(shapes_layer.current_properties[label_property][0])
-            if new_label != label_menu.value:
-                label_menu.value = new_label
-
-        shapes_layer.events.current_properties.connect(update_label_menu)
-
-        def label_changed(event):
-            """This is acallback that update the current properties on the Shapes layer
-            when the label menu selection changes
-            """
-            selected_label = event.value
-            current_properties = shapes_layer.current_properties
-            current_properties[label_property] = np.asarray([selected_label])
-            shapes_layer.current_properties = current_properties
-
-        label_menu.changed.connect(label_changed)
-
-        return label_widget
-
-    def visualiser_resultat_detection(iy):
-
-        doneeee = pd.read_csv(TABLE_PATH[iy])
-
-        class_predicted = list(doneeee['Predicted Class'])
-        size_in_pixel = list(doneeee['Size in pixels'])
-        bbx_min0 = list(doneeee['Bounding Box Minimum_0'])
-        bbx_min1 = list(doneeee['Bounding Box Minimum_1'])
-        bbx_max0 = list(doneeee['Bounding Box Maximum_0'])
-        bbx_max1 = list(doneeee['Bounding Box Maximum_1'])
+    list_widget = QListWidget()
 
 
-        original_image = imread(raw_data_tif_set[iy].replace('\\','/'));print(raw_data_tif_set[iy].replace('\\','/'))
-
-        image_label_temp = imread(segmentation_image_set[iy].replace('\\','/'))
-        if len(image_label_temp.shape)==2:
-            label_image = imread(segmentation_image_set[iy].replace('\\','/'));print(segmentation_image_set[iy].replace('\\','/'))
-        else:
-            label_image = np.squeeze(imread(segmentation_image_set[iy].replace('\\','/'))[:,:,0]);print(segmentation_image_set[iy].replace('\\','/'))
-            
-        # create the features dictionary
-        features = {
-            'label': class_predicted,
-            'size' : size_in_pixel,
-            'bbx_0' : bbx_min1,
-            'bbx_1' : bbx_min0,
-            'bbx_2' : bbx_max1,
-            'bbx_3' : bbx_max0,    
-        }
-
-        donnee_feature = pd.DataFrame(features)
-        rslt_donnee_feature = donnee_feature.loc[donnee_feature['size'] >= 10] #supprimer les petits espaces
+    for n in names:
+        list_widget.addItem(n)    
         
-        features = {
-            'label': list(rslt_donnee_feature['label']),
-            'size' : list(rslt_donnee_feature['size']),
-            'bbx_0' : list(rslt_donnee_feature['bbx_0']),
-            'bbx_1' : list(rslt_donnee_feature['bbx_1']),
-            'bbx_2' : list(rslt_donnee_feature['bbx_2']),
-            'bbx_3' : list(rslt_donnee_feature['bbx_3']),    
-        }
-        
-        
-        
-        """
-        Annotate segmentation with text
-        ===============================
-        Perform a segmentation and annotate the results with
-        bounding boxes and text
-        .. tags:: analysis
-        """
-        
-        # create the bounding box rectangles
-        bbox_rects = make_bbox([features[f'bbx_{i}'] for i in range(4)])
+    DOCK_widget_list=[]
 
-        # specify the display parameters for the text
-        text_parameters = {
-            'string': '{label}\nsize (in pxl): {size}',
-            'size': 11,
-            'color': 'green',
-            'anchor': 'upper_left',
-            'translation': [-3, 0],
-        }
-
-        viewer = napari.view_image(original_image, name='aphid')
-        label_layer = viewer.add_labels(label_image, name='segmentation')
-        
-        
-        label_image_ = label(label_image)
-        stats_label = regionprops(label_image_)
-        points = [s.centroid for s in stats_label]
-        label_layer = viewer.add_points(points, face_color='green', symbol='cross', size=10, features=features,text=text_parameters)
-        
-        # shapes_layer = viewer.add_shapes(
-        #     bbox_rects,
-        #     face_color='transparent',
-        #     edge_color='green',
-        #     features=features,
-        #     text=text_parameters,
-        #     name='bounding box',
-        # )
-
-        dock_widget = table_to_widget(rslt_donnee_feature[['label','size']])
-        
-        viewer.window.add_dock_widget(dock_widget, area='right')
-               
-        # if __name__ == '__main__':
-        #     napari.run()
-            
-    # visualiser_resultat_detection(6)
-
-    names = [ix.split('\\')[-1] for ix in image_path]
-    print(names)
-    
     def open_name(item):
-        
+            
         name = item.text()
-        name_folder = name[:-4]
-
         
-        print('Loading', name, '...')
-
+        print('OPEN:',name)
+        
         napari_viewer.layers.select_all()
         napari_viewer.layers.remove_selected()    
-        fname = f'{output_dir.name}\{name}'
-        print('donnee dans fname :',os.listdir(fname))
-        
-        AAAA = np.array(os.listdir(fname))
-        
-        original_image_path_tif = list(filter(None,list(np.where(np.char.endswith(AAAA,'.tif'),AAAA,''))))[0]
-        original_image_path_h5 = list(filter(None,list(np.where(np.char.endswith(AAAA,'.h5'),AAAA,''))))[0]
-        result_image_path_png = list(filter(None,list(np.where(np.char.endswith(AAAA,'_result.png'),AAAA,''))))[0]
-        result_type_image_path_png = list(filter(None,list(np.where(np.char.endswith(AAAA,'_result_type.png'),AAAA,''))))[0]
-        table_path_csv = list(filter(None,list(np.where(np.char.endswith(AAAA,'.csv'),AAAA,''))))[0]
-        
-        # result
-        data_label = np.squeeze(imread(f'{fname}\{result_image_path_png}')[:,:,0])
-        data_label1 = np.array(data_label)       
-                    
-        fond_image=np.where(data_label1==0)
-        aphid=np.where(data_label1!=0)
-        data_label1[fond_image]=0
-        data_label1[aphid]=255     
-                    
-        napari_viewer.add_labels(data_label1,name=f'{result_image_path_png[:-4]}')
-        
-        # tif        
-        napari_viewer.add_image(imread(f'{fname}\{original_image_path_tif}'),name=f'{original_image_path_tif[:-4]}')
-        
-        # donnee
-        doneeee = pd.read_csv(f'{fname}\{table_path_csv}')
-        
-        class_predicted = list(doneeee['Predicted Class'])
-        size_in_pixel = list(doneeee['Size in pixels'])
-        bbx_min0 = list(doneeee['Bounding Box Minimum_0'])
-        bbx_min1 = list(doneeee['Bounding Box Minimum_1'])
-        bbx_max0 = list(doneeee['Bounding Box Maximum_0'])
-        bbx_max1 = list(doneeee['Bounding Box Maximum_1'])
-        
-        original_image = imread(f'{fname}\{original_image_path_tif}')
-        image_label_temp = imread(f'{fname}\{result_image_path_png}')
-        if len(image_label_temp.shape)==2:
-            label_image = imread(f'{fname}\{result_image_path_png}')
-        else:
-            label_image = np.squeeze(imread(f'{fname}\{result_image_path_png}')[:,:,0])
             
-        features = {
-            'label': class_predicted,
-            'size' : size_in_pixel,
-            'bbx_0' : bbx_min1,
-            'bbx_1' : bbx_min0,
-            'bbx_2' : bbx_max1,
-            'bbx_3' : bbx_max0,    
-        }
-
-        donnee_feature = pd.DataFrame(features)
+        RGB_name = os.path.basename(dico_for_vis[name][2])
+        data_RGB = imread(dico_for_vis[name][2])
         
-        rslt_donnee_feature = donnee_feature.loc[donnee_feature['size'] >= 10] #supprimer les petits espaces
-        features = {
-            'label': list(rslt_donnee_feature['label']),
-            'size' : list(rslt_donnee_feature['size']),
-            'bbx_0' : list(rslt_donnee_feature['bbx_0']),
-            'bbx_1' : list(rslt_donnee_feature['bbx_1']),
-            'bbx_2' : list(rslt_donnee_feature['bbx_2']),
-            'bbx_3' : list(rslt_donnee_feature['bbx_3']),    
-        }
+        label_name = os.path.basename(dico_for_vis[name][3])
+        data_label = np.array(imread(dico_for_vis[name][3]))
         
-        bbox_rects = make_bbox([features[f'bbx_{i}'] for i in range(4)])
-
-        # specify the display parameters for the text
+        napari_viewer.add_image(data_RGB,name=f'{RGB_name}')  
+        label_layers = napari_viewer.add_labels(data_label,name=f'{label_name}')
+        label_layers
+        
+        un_tableau_csv = dico_for_vis[name][1]
+        df = pd.read_csv(un_tableau_csv)
+        class_predicted = df['Predicted Class']
+        n= len(df['Predicted Class'])
+        ID_list = ['ID:'+str(ix) for ix in np.arange(n)]
+        d = {'ID':ID_list,'class':class_predicted}
+        
+        features = {
+                    'name' : ID_list,
+                    'label': list(df['Predicted Class']),
+                    'size' : list(df['Size in pixels']),
+                    'bbx_0' : list(df['Bounding Box Minimum_0']),
+                    'bbx_1' : list(df['Bounding Box Minimum_1']),
+                    'bbx_2' : list(df['Bounding Box Maximum_0']),
+                    'bbx_3' : list(df['Bounding Box Maximum_1']),    
+                }
+                
         text_parameters = {
-            'string': '{label}\nsize (in pxl): {size}',
-            'size': 11,
-            'color': 'green',
-            'anchor': 'upper_left',
-            'translation': [-3, 0],
-        }
+                    'string': '{name}',
+                    'size': 11,
+                    'color': 'red',
+                    'anchor': 'upper_left',
+                    'translation': [-3, 0],
+                }
 
-        label_layer = napari_viewer.add_labels(label_image, name='segmentation')
-        
-        
-
-        bbox_du_rectangle = [features[f'bbx_{i}'] for i in range(4)]
+        bbox_du_rectangle = [features['bbx_0'],features['bbx_1'],features['bbx_2'],features['bbx_3']]
         minr = bbox_du_rectangle[0]
         minc = bbox_du_rectangle[1]
         maxr = bbox_du_rectangle[2]
         maxc = bbox_du_rectangle[3]
         n_len = len(bbox_du_rectangle[0])
-        rectangle_center = [(int(minr[iixh] + maxr[iixh])/2, int(minc[iixh] + maxc[iixh])/2) for iixh in range(n_len)]
-        label_layer = napari_viewer.add_points(rectangle_center, face_color='green', symbol='cross', size=10, features=features,text=text_parameters)        
+        rectangle_center = [(minc[iixh]+(maxc[iixh]-minc[iixh])/2,minr[iixh]+(maxr[iixh]-minr[iixh])/2) for iixh in range(n_len)]
+        label_layer = napari_viewer.add_points(rectangle_center, face_color='red', symbol='cross', size=20, features=features,text=text_parameters)      
         
-        dock_widget = table_to_widget(rslt_donnee_feature[['label','size']])        
-        napari_viewer.window.add_dock_widget(dock_widget, area='right')                   
-
+        table_dock_widget = table_to_widget(d,un_tableau_csv)        
+        table_dock_widget.setFixedHeight(300)
+        dock_widget = napari_viewer.window.add_dock_widget(table_dock_widget, area='right',name="Save")
+        DOCK_widget_list.append(dock_widget)
+        if len(DOCK_widget_list)!=1:
+            napari_viewer.window.remove_dock_widget(DOCK_widget_list[-2])
+        dock_widget
         print('... done.')
 
+    DOCK_widget_plot_list = []
+    def open_plotting(item):
+        # mpl_widget = FigureCanvas(Figure(figsize=(8, 6)))
+        # mpl_widget.setFixedWidth(1800)
+        # mpl_widget.setFixedHeight(300)
+        
+        # static_ax = mpl_widget.figure.subplots()
+        
+        df_selected = df1[df1['Class']==item]
+        data_y = df_selected['Size']
+        data_x = np.random.uniform(-1,1,len(data_y))
 
-    list_widget = QListWidget()
-    for n in names:
-        list_widget.addItem(n)    
+        COORD_LIST = []
+        for iy,ix in zip(data_y,data_x):
+            COORD_LIST.append([iy,ix])
+        dico_data = {'IDimage': list(df_selected['ID_image']),'image': list(df_selected['Image']),'coord':COORD_LIST}
+        df_dico_data = pd.DataFrame(dico_data)
+        graphics_widget = MplCanvas(Figure())
+        graphics_widget.pts = graphics_widget.axes.scatter(
+                    data_y,
+                    data_x,
+                )
+        graphics_widget.selector = SelectFromCollection(
+                    graphics_widget,
+                    graphics_widget.axes,
+                    graphics_widget.pts,
+                    df_dico_data,
+                    napari_viewer
+                )
+        
+
+        dock_plot = napari_viewer.window.add_dock_widget(graphics_widget, area='bottom',name="Save")
+        DOCK_widget_plot_list.append(dock_plot)
+        if len(DOCK_widget_plot_list)!=1:
+            napari_viewer.window.remove_dock_widget(DOCK_widget_plot_list[-2])
+
+        print('OPEN:',item,'..done')
+
+    combo_box = QComboBox()
+    combo_box.setFixedWidth(300)
+    type_aphid_list = ['Apterous adult', 'Larvae/Nymph small','Larvae','Molt','Nymph']
+    combo_box.addItems(type_aphid_list)
+    combo_box.currentTextChanged.connect(open_plotting)
+    open_plotting(combo_box.currentText())
+    napari_viewer.window.add_dock_widget(combo_box, area='right',name="Plot")
+
     list_widget.currentItemChanged.connect(open_name)
     napari_viewer.window.add_dock_widget([list_widget], area='right',name="Images")
     list_widget.setCurrentRow(0)
