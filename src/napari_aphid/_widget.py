@@ -107,6 +107,38 @@ class MyProcess(threading.Thread):
         file_name = os.path.basename(filename)
         print(f"IMG {filename} = {np.round(end_process-start_process,2)} second")
         # os.remove(filename+'_result_type'+file_extension)
+        
+class MyProcess_classification(threading.Thread):
+    def __init__(self,element_files,projet,q):
+        threading.Thread.__init__(self)
+        self.elements_of_file = element_files
+        self.q = q
+        self.projet = projet
+    
+    def run(self):
+        data = self.q.get()
+        ilastik_path = 'C:/Program Files/ilastik-1.3.3post3/ilastik.exe'
+        
+        table_filename_path = '--table_filename='+self.elements_of_file[2]
+        raw_image = '--raw_data='+self.elements_of_file[0]
+        seg_image = '--segmentation_image='+self.elements_of_file[1]
+        
+        nom_image = os.path.basename(self.elements_of_file[0])
+        filename, file_extension = os.path.splitext(nom_image)
+        print(f"{filename} IMPORTED")
+        projet_path = '--project='+self.projet #C:/Users/Metuarea Herearii/Desktop/yolo_detection_tools/segmentation_model.ilp'
+        start_process = time.time()
+        
+        subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",'--headless',projet_path,'--export_source=Object Predictions',
+                        raw_image,
+                        seg_image,
+                        table_filename_path])  
+        
+        end_process = time.time()
+        print(f"IMG {filename} = {np.round(end_process-start_process,2)} second")
+        # os.remove(filename+'_result_type'+file_extension)
+    
+        
 
 class SelectFromCollection:
 
@@ -741,10 +773,10 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
     SEG = []
     threads_list = []
     for iy in tqdm(range(len(sub_list_h5)), desc= 'PROCESSING'):
-        list_to_work = sub_list_h5[iy]
-        for path_ix in range(len(list_to_work)):
-            im_h5 = list_to_work[path_ix]
-            thread = MyProcess(im_h5,class_path_ilastik,workQueue)
+        list_sub_h5_to_work = sub_list_h5[iy]
+        for path_ix in range(len(list_sub_h5_to_work)):
+            elements_of_file = dico_obj_class[path_ix]
+            thread = MyProcess_classification(elements_of_file,class_path_ilastik,workQueue)
             thread.start()
             threads_list.append(thread)
 
@@ -753,7 +785,7 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
             # SEG.append(os.path.join(output_dir.name,image_name+'_result_type.tif'))
 
         queueLock.acquire()
-        for word in list_to_work:
+        for word in list_sub_h5_to_work:
             name_image = os.path.basename(word)
             workQueue.put(name_image)
         queueLock.release()
