@@ -774,7 +774,7 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
     threads_list = []
     for iy in tqdm(range(len(sub_list_h5)), desc= 'PROCESSING'):
         list_sub_h5_to_work = sub_list_h5[iy]
-        for path_ix in range(len(list_sub_h5_to_work)):
+        for path_ix in list_sub_h5_to_work:
             elements_of_file = dico_obj_class[path_ix]
             thread = MyProcess_classification(elements_of_file,class_path_ilastik,workQueue)
             thread.start()
@@ -797,28 +797,7 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
             t.join()
 
     print(f"Total process time : {np.round(time.time() - start_time,2)} seconds")
-    
-
-    # for iy in tqdm(range(len(sub_list_h5))):
-    #     list_sub_h5_to_work = sub_list_h5[iy]
-    #     for path in list_sub_h5_to_work:
-    #         elements_of_file = dico_obj_class[path]
-
-    #         table_filename_path = '--table_filename='+elements_of_file[2]
-    #         raw_image = '--raw_data='+elements_of_file[0]
-    #         seg_image = '--segmentation_image='+elements_of_file[1]
-
-    #         subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",
-    #                                 '--headless',
-    #                                 projet_path,
-    #                                 '--export_source=Object Predictions',
-    #                                 raw_image,
-    #                                 seg_image,
-    #                                 table_filename_path])        
-            
-    #         print(path,'..done')
-    # print('Total time processing:',time.time() - start_time, 'seconds')
-    
+        
     GET_PNG = []
     GET_CSV = []
     GET_TIF = []
@@ -835,7 +814,8 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
                 GET_TIF.append(path_of_iy)
             if iy.find('Object Predictions')!=-1:
                 GET_OC.append(path_of_iy)
-
+    print(GET_OC)
+    print("1 done")
     dico_for_vis = {}
     names = []
     for ix,iy,iz,i0 in zip(GET_PNG,GET_CSV,GET_TIF,GET_OC):
@@ -844,37 +824,30 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
         image_name = head.split('_result')[0]
         names.append(image_name)
         dico_for_vis[image_name]=[ix,iy,iz,i0]    
-    
-    ID_nom_image=[]
-    nomImage=[]
-    Label=[]
-    Size=[]
-    for ix in dico_for_vis:
-        tableau_im = dico_for_vis[ix][1]
-        df = pd.read_csv(tableau_im)
+    print("2 done")
+    # ID_nom_image=[]
+    # nomImage=[]
+    # Label=[]
+    # Size=[]
+    # for ix in dico_for_vis:
+    #     tableau_im = dico_for_vis[ix][1]
+    #     df = pd.read_csv(tableau_im)
 
-        n= len(df['Predicted Class'])
-        ID_image_list = ['ID:'+str(iy)+'_'+ix for iy in np.arange(n)]
-        nomImage_list = [ix for iy in np.arange(n)]
-        class_predicted_list = df['Predicted Class']
-        size_pxl_list = df['Size in pixels']
+    #     n= len(df['Predicted Class'])
+    #     ID_image_list = ['ID:'+str(iy)+'_'+ix for iy in np.arange(n)]
+    #     nomImage_list = [ix for iy in np.arange(n)]
+    #     class_predicted_list = df['Predicted Class']
+    #     size_pxl_list = df['Size in pixels']
         
-        ID_nom_image = ID_nom_image + ID_image_list
-        nomImage = nomImage + nomImage_list
-        Label = Label + class_predicted_list.values.tolist()
-        Size = Size + size_pxl_list.values.tolist()
-
-    d = {'ID_image':ID_nom_image,'Image':nomImage,'Class':Label,'Size':Size}
-
-    df1 = pd.DataFrame(d)
-    df1_Apterous_adult = df1[df1['Class']=='Apterous adult']
-    df1_Larvae_Nymph_small = df1[df1['Class']=='Larvae/Nymph small']
-    df1_Larvae = df1[df1['Class']=='Larvae']
-    df1_Molt = df1[df1['Class']=='Molt']
-    df1_Nymph = df1[df1['Class']=='Nymph']    
-    
+    #     ID_nom_image = ID_nom_image + ID_image_list
+    #     nomImage = nomImage + nomImage_list
+    #     Label = Label + class_predicted_list.values.tolist()
+    #     Size = Size + size_pxl_list.values.tolist()
+    print("3 done")
     import pandas as pd
     from skimage.io import imread
+    from matplotlib.backends.backend_qt5agg import FigureCanvas
+    from matplotlib.figure import Figure
 
     def table_to_widget(table: dict,path: str) -> QWidget:
         """
@@ -938,7 +911,6 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
         return widget
 
     list_widget = QListWidget()
-
 
     for n in names:
         list_widget.addItem(n)    
@@ -1007,51 +979,6 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
         dock_widget
         print('... done.')
 
-    DOCK_widget_plot_list = []
-    def open_plotting(item):
-        # mpl_widget = FigureCanvas(Figure(figsize=(8, 6)))
-        # mpl_widget.setFixedWidth(1800)
-        # mpl_widget.setFixedHeight(300)
-        
-        # static_ax = mpl_widget.figure.subplots()
-        
-        df_selected = df1[df1['Class']==item]
-        data_y = df_selected['Size']
-        data_x = np.random.uniform(-1,1,len(data_y))
-
-        COORD_LIST = []
-        for iy,ix in zip(data_y,data_x):
-            COORD_LIST.append([iy,ix])
-        dico_data = {'IDimage': list(df_selected['ID_image']),'image': list(df_selected['Image']),'coord':COORD_LIST}
-        df_dico_data = pd.DataFrame(dico_data)
-        graphics_widget = MplCanvas(Figure())
-        graphics_widget.pts = graphics_widget.axes.scatter(
-                    data_y,
-                    data_x,
-                )
-        graphics_widget.selector = SelectFromCollection(
-                    graphics_widget,
-                    graphics_widget.axes,
-                    graphics_widget.pts,
-                    df_dico_data,
-                    napari_viewer
-                )
-        
-
-        dock_plot = napari_viewer.window.add_dock_widget(graphics_widget, area='bottom',name="Save")
-        DOCK_widget_plot_list.append(dock_plot)
-        if len(DOCK_widget_plot_list)!=1:
-            napari_viewer.window.remove_dock_widget(DOCK_widget_plot_list[-2])
-
-        print('OPEN:',item,'..done')
-
-    combo_box = QComboBox()
-    combo_box.setFixedWidth(300)
-    type_aphid_list = ['Apterous adult', 'Larvae/Nymph small','Larvae','Molt','Nymph']
-    combo_box.addItems(type_aphid_list)
-    combo_box.currentTextChanged.connect(open_plotting)
-    open_plotting(combo_box.currentText())
-    napari_viewer.window.add_dock_widget(combo_box, area='right',name="Plot")
 
     list_widget.currentItemChanged.connect(open_name)
     napari_viewer.window.add_dock_widget([list_widget], area='right',name="Images")
