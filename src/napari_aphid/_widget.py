@@ -824,26 +824,7 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
         image_name = head.split('_result')[0]
         names.append(image_name)
         dico_for_vis[image_name]=[ix,iy,iz,i0]    
-    print("2 done")
-    # ID_nom_image=[]
-    # nomImage=[]
-    # Label=[]
-    # Size=[]
-    # for ix in dico_for_vis:
-    #     tableau_im = dico_for_vis[ix][1]
-    #     df = pd.read_csv(tableau_im)
 
-    #     n= len(df['Predicted Class'])
-    #     ID_image_list = ['ID:'+str(iy)+'_'+ix for iy in np.arange(n)]
-    #     nomImage_list = [ix for iy in np.arange(n)]
-    #     class_predicted_list = df['Predicted Class']
-    #     size_pxl_list = df['Size in pixels']
-        
-    #     ID_nom_image = ID_nom_image + ID_image_list
-    #     nomImage = nomImage + nomImage_list
-    #     Label = Label + class_predicted_list.values.tolist()
-    #     Size = Size + size_pxl_list.values.tolist()
-    print("3 done")
     import pandas as pd
     from skimage.io import imread
     from matplotlib.backends.backend_qt5agg import FigureCanvas
