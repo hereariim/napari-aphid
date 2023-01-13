@@ -97,7 +97,7 @@ In each folder Area1, Area2, ..., Arean, we notice that **each tif image is acco
 
 This widget is a tool to segment a set of images. It takes as input a compressed file of images and an ilastik segmentation model. A Run button is used to start the image segmentation process. In the background, the console presents the progress status. This widget returns a menu which is a list of processed images. This list allows an RGB image and its segmentation mask to be displayed in the napari window.
 
-![pixelseg](https://user-images.githubusercontent.com/93375163/212312715-555337c2-c166-4ec0-a479-d37056d1626b.png)
+![segmentation_cpe](https://user-images.githubusercontent.com/93375163/212323051-bc84d597-a9ff-46ca-b897-cb18a0e77b4c.png)
 
 **User conduct :** In this widget, the user corrects the image with the annotation tools (brush and eraser only). With the brush, he/she has to add the same colour presented in the image. To obtain this colour, the user can take the color with the color picker tool. With the eraser, he/she erase colour not well predicted. Tous les annotations appliquées dans l'image doit être sauvegarder avec le bouton *Save* du widget **Save modification**
 
