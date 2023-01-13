@@ -31,6 +31,8 @@ To install latest development version :
 
     pip install git+https://github.com/hereariim/napari-aphid.git
 
+Several commands are used in the script. These commands are exclusively executable on windows, for the moment. So, this plugin works only on windows.
+
 ## Description
 
 This plugin is a tool to count the number of aphids from two models developed on ilastik. Implemented in napari, this tool allows the correction of pixels and labels that are not well 
