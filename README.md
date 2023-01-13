@@ -27,12 +27,18 @@ You can install `napari-aphid` via [pip]:
 
     pip install napari-aphid
 
-
-
 To install latest development version :
 
     pip install git+https://github.com/hereariim/napari-aphid.git
 
+## Description
+
+This plugin is a tool to count the number of aphids from two models developed on ilastik. Implemented in napari, this tool allows the correction of pixels and labels that are not well 
+predicted. 
+
+In this plugin we find our two main parts of the aphid counting model presented in two widgets. A third widget allows to save the updates applied on the segmentation mask.
+
+This plugin is an use cas, dedicated to private use of french laboratory.
 
 ## Contributing
 

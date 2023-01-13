@@ -69,7 +69,6 @@ from qtpy.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QGridLayout,
 from qtpy.QtCore import Qt
 
 import pandas as pd
-from turtle import done
 from skimage.morphology import closing, square, remove_small_objects
 from magicgui.widgets import ComboBox, Container
 
