@@ -14,6 +14,7 @@ from skimage.morphology import erosion
 from scipy.ndimage import gaussian_filter
 from skimage.morphology import binary_opening
 from skimage.filters import threshold_otsu as gaussian, sobel
+from napari.utils.notifications import show_info
 import skimage.io
 from tqdm import tqdm
 
@@ -853,12 +854,14 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
                             path_3 = os.path.join(path_2,iz)
 
                             df = pd.read_csv(path_3)
-                            n = len(df['object_id'])
-                            df['Country'] = [ix for iy in np.arange(n)]
-                            df['ID'] = ['ID:'+str(im) for im in np.arange(n)]
-                            df['Image'] = [name_image for im in np.arange(n)]
-                            DATA_FRAME.append(df)
-                            
+                            if 'object_id'  in list(df.columns):
+                                n = len(df['object_id'])
+                                df['Country'] = [ix for iy in np.arange(n)]
+                                df['ID'] = ['ID:'+str(im) for im in np.arange(n)]
+                                df['Image'] = [name_image for im in np.arange(n)]
+                                DATA_FRAME.append(df)
+                            else:
+                                print('NO PREDICTION:',name_image)
             pd_class = []
             cty = []
             id_obj = []
@@ -919,45 +922,48 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
         
         un_tableau_csv = dico_for_vis[name][1]
         df = pd.read_csv(un_tableau_csv)
-        class_predicted = df['Predicted Class']
-        n= len(df['Predicted Class'])
-        ID_list = ['ID:'+str(ix) for ix in np.arange(n)]
-        d = {'ID':ID_list,'class':class_predicted}
-        
-        features = {
-                    'name' : ID_list,
-                    'label': list(df['Predicted Class']),
-                    'size' : list(df['Size in pixels']),
-                    'bbx_0' : list(df['Bounding Box Minimum_0']),
-                    'bbx_1' : list(df['Bounding Box Minimum_1']),
-                    'bbx_2' : list(df['Bounding Box Maximum_0']),
-                    'bbx_3' : list(df['Bounding Box Maximum_1']),    
-                }
-                
-        text_parameters = {
-                    'string': '{name}',
-                    'size': 11,
-                    'color': 'red',
-                    'anchor': 'upper_left',
-                    'translation': [-3, 0],
-                }
+        if 'Predicted Class'  in list(df.columns):
+            class_predicted = df['Predicted Class']
+            n= len(df['Predicted Class'])
+            ID_list = ['ID:'+str(ix) for ix in np.arange(n)]
+            d = {'ID':ID_list,'class':class_predicted}
+            
+            features = {
+                        'name' : ID_list,
+                        'label': list(df['Predicted Class']),
+                        'size' : list(df['Size in pixels']),
+                        'bbx_0' : list(df['Bounding Box Minimum_0']),
+                        'bbx_1' : list(df['Bounding Box Minimum_1']),
+                        'bbx_2' : list(df['Bounding Box Maximum_0']),
+                        'bbx_3' : list(df['Bounding Box Maximum_1']),    
+                    }
+                    
+            text_parameters = {
+                        'string': '{name}',
+                        'size': 11,
+                        'color': 'red',
+                        'anchor': 'upper_left',
+                        'translation': [-3, 0],
+                    }
 
-        bbox_du_rectangle = [features['bbx_0'],features['bbx_1'],features['bbx_2'],features['bbx_3']]
-        minr = bbox_du_rectangle[0]
-        minc = bbox_du_rectangle[1]
-        maxr = bbox_du_rectangle[2]
-        maxc = bbox_du_rectangle[3]
-        n_len = len(bbox_du_rectangle[0])
-        rectangle_center = [(minc[iixh]+(maxc[iixh]-minc[iixh])/2,minr[iixh]+(maxr[iixh]-minr[iixh])/2) for iixh in range(n_len)]
-        label_layer = napari_viewer.add_points(rectangle_center, face_color='red', symbol='cross', size=20, features=features,text=text_parameters)      
-        
-        table_dock_widget = table_to_widget(d,un_tableau_csv)        
-        table_dock_widget.setFixedHeight(300)
-        dock_widget = napari_viewer.window.add_dock_widget(table_dock_widget, area='right',name="Save")
-        DOCK_widget_list.append(dock_widget)
-        if len(DOCK_widget_list)!=1:
-            napari_viewer.window.remove_dock_widget(DOCK_widget_list[-2])
-        dock_widget
+            bbox_du_rectangle = [features['bbx_0'],features['bbx_1'],features['bbx_2'],features['bbx_3']]
+            minr = bbox_du_rectangle[0]
+            minc = bbox_du_rectangle[1]
+            maxr = bbox_du_rectangle[2]
+            maxc = bbox_du_rectangle[3]
+            n_len = len(bbox_du_rectangle[0])
+            rectangle_center = [(minc[iixh]+(maxc[iixh]-minc[iixh])/2,minr[iixh]+(maxr[iixh]-minr[iixh])/2) for iixh in range(n_len)]
+            label_layer = napari_viewer.add_points(rectangle_center, face_color='red', symbol='cross', size=20, features=features,text=text_parameters)      
+            
+            table_dock_widget = table_to_widget(d,un_tableau_csv)        
+            table_dock_widget.setFixedHeight(300)
+            dock_widget = napari_viewer.window.add_dock_widget(table_dock_widget, area='right',name="Save")
+            DOCK_widget_list.append(dock_widget)
+            if len(DOCK_widget_list)!=1:
+                napari_viewer.window.remove_dock_widget(DOCK_widget_list[-2])
+            dock_widget
+        else:
+            show_info('NO PREDICTION:'+name)
         print('... done.')
 
 
