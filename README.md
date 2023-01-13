@@ -42,8 +42,6 @@ This plugin is an use cas, dedicated to private use of french laboratory.
 
 ## Plugin input
 
-### Segmentation
-
 The user must give two objects as input:
 
 - Compressed file in .zip format
@@ -109,7 +107,7 @@ This is the backup of the segmentation mask. It saves updates applied to the mas
 
 This widget is a tool to classify segmented images. It takes as input an ilastik object classification model. A Run button is used to start the classification process. In the background, the console shows the progress of the image processing. This widget returns a menu that lists the processed images. This list provides two elements. The first is the display of the selected image in the window. The second is the display of a table that shows the predicted classes for each object.
 
-![classification_cpe](https://user-images.githubusercontent.com/93375163/212318953-393d470b-0ef3-45a2-a6da-ca5902de40ba.png)
+![classification_cpe](https://user-images.githubusercontent.com/93375163/212323369-32423622-4f41-4dcb-800b-39ff66be67f9.png)
 
 **User conduct :** In this widget, the user corrects labels not well predicted in the table at the bottom right. He must not forget to save his correction with the Save button.
 When the user has finished with all his images, he uses the Export button to import a quantitative table. This table contains for each image, the name of the aphid type and its size in pixels.
