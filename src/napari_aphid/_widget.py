@@ -14,7 +14,6 @@ from skimage.morphology import erosion
 from scipy.ndimage import gaussian_filter
 from skimage.morphology import binary_opening
 from skimage.filters import threshold_otsu as gaussian, sobel
-from napari.utils.notifications import show_info
 import skimage.io
 from tqdm import tqdm
 
@@ -88,37 +87,37 @@ from matplotlib.figure import Figure
 zip_dir = tempfile.TemporaryDirectory()
 
 class MyProcess(threading.Thread):
-    def __init__(self,nom_image,projet,q):
+    def __init__(self,nom_image,projet,path_to_ilastik,q):
         threading.Thread.__init__(self)
         self.nom_image = nom_image
         self.q = q
         self.projet = projet
+        self.ilastik_path = path_to_ilastik
     
     def run(self):
         data = self.q.get()
-        ilastik_path = 'C:/Program Files/ilastik-1.3.3post3/ilastik.exe'
         filename, file_extension = os.path.splitext(self.nom_image)
         print(f"{filename} IMPORTED")
         donner = '--raw_data='+self.nom_image
         recevoir = '--output_filename_format='+filename+'_result'+file_extension
         projet_path = '--project='+self.projet #C:/Users/Metuarea Herearii/Desktop/yolo_detection_tools/segmentation_model.ilp'
         start_process = time.time()
-        subprocess.run([ilastik_path,'--headless',projet_path,'--export_source=Simple Segmentation',donner,recevoir])
+        subprocess.run([self.ilastik_path,'--headless',projet_path,'--export_source=Simple Segmentation',donner,recevoir])
         end_process = time.time()
         file_name = os.path.basename(filename)
         print(f"IMG {filename} = {np.round(end_process-start_process,2)} second")
         # os.remove(filename+'_result_type'+file_extension)
         
 class MyProcess_classification(threading.Thread):
-    def __init__(self,element_files,projet,q):
+    def __init__(self,element_files,projet,path_to_ilastik,q):
         threading.Thread.__init__(self)
         self.elements_of_file = element_files
         self.q = q
         self.projet = projet
+        self.ilastik_path = path_to_ilastik
     
     def run(self):
         data = self.q.get()
-        ilastik_path = 'C:/Program Files/ilastik-1.3.3post3/ilastik.exe'
         
         table_filename_path = '--table_filename='+self.elements_of_file[2]
         raw_image = '--raw_data='+self.elements_of_file[0]
@@ -130,7 +129,7 @@ class MyProcess_classification(threading.Thread):
         projet_path = '--project='+self.projet #C:/Users/Metuarea Herearii/Desktop/yolo_detection_tools/segmentation_model.ilp'
         start_process = time.time()
         
-        subprocess.run(["C:/Program Files/ilastik-1.3.3post3/ilastik.exe",'--headless',projet_path,'--export_source=Object Predictions',
+        subprocess.run([self.ilastik_path,'--headless',projet_path,'--export_source=Object Predictions',
                         raw_image,
                         seg_image,
                         table_filename_path])  
@@ -138,113 +137,6 @@ class MyProcess_classification(threading.Thread):
         end_process = time.time()
         print(f"IMG {filename} = {np.round(end_process-start_process,2)} second")
         # os.remove(filename+'_result_type'+file_extension)
-    
-        
-
-class SelectFromCollection:
-
-    def __init__(self, parent, ax, collection, pd_df, napari_viewer, alpha_other=0.3):
-        self.canvas = ax.figure.canvas
-        self.parent = parent
-        self.collection = collection
-        self.alpha_other = alpha_other
-
-        self.xys = collection.get_offsets()
-        self.Npts = len(self.xys)
-        
-        self.pandas_data_frame = pd_df
-
-        # Ensure that we have separate colors for each object
-        self.fc = collection.get_facecolors()
-        if len(self.fc) == 0:
-            raise ValueError("Collection must have a facecolor")
-        elif len(self.fc) == 1:
-            self.fc = np.tile(self.fc, (self.Npts, 1))
-
-        self.lasso = LassoSelector(ax, onselect=self.onselect, button=1)
-        self.napari_viewer = napari_viewer
-        self.ind = []
-        self.ind_mask = []
-        self.DOCK_widget_list_image_selected = []
-
-    def onselect(self, verts):
-        path = Path(verts)
-        self.ind = np.nonzero(path.contains_points(self.xys))[0]
-        self.ind_mask = path.contains_points(self.xys)
-        self.fc[:, -1] = self.alpha_other
-        self.fc[self.ind, -1] = 1
-        self.collection.set_facecolors(self.fc)
-        self.canvas.draw_idle()
-        self.selected_coordinates = self.xys[self.ind].tolist()
-        if len(self.selected_coordinates)!=0:
-            multi_image_label = self.pandas_data_frame[self.pandas_data_frame['coord'].isin(self.selected_coordinates)][["image"]].values.tolist()
-            names_images_selected = list(np.unique(multi_image_label))
-            list_widget_for_images_selected = QListWidget()
-            for n in names_images_selected:
-                list_widget_for_images_selected.addItem(n)
-            dock_widget_im_slect = self.napari_viewer.window.add_dock_widget([list_widget_for_images_selected], area='bottom',name="")
-            self.DOCK_widget_list_image_selected.append(dock_widget_im_slect)
-            if len(self.DOCK_widget_list_image_selected)!=1:
-                self.napari_viewer.window.remove_dock_widget(self.DOCK_widget_list_image_selected[-2])
-            dock_widget_im_slect
-            list_widget_for_images_selected.setCurrentRow(0)  
-
-    def disconnect(self):
-        self.lasso.disconnect_events()
-        self.fc[:, -1] = 1
-        self.collection.set_facecolors(self.fc)
-        self.canvas.draw_idle()
-
-class MplCanvas(FigureCanvas):
-    def __init__(self, parent=None, width=7, height=4, manual_clustering_method=None):
-        self.fig = Figure(figsize=(width, height))
-        self.manual_clustering_method = manual_clustering_method
-
-        # changing color of axes background to napari main window color
-        self.fig.patch.set_facecolor("#262930")
-        self.axes = self.fig.add_subplot(111)
-
-        # changing color of plot background to napari main window color
-        self.axes.set_facecolor("#262930")
-
-        # changing colors of all axes
-        self.axes.spines["bottom"].set_color("white")
-        self.axes.spines["top"].set_color("white")
-        self.axes.spines["right"].set_color("white")
-        self.axes.spines["left"].set_color("white")
-        self.axes.xaxis.label.set_color("white")
-        self.axes.yaxis.label.set_color("white")
-
-        # changing colors of axes labels
-        self.axes.tick_params(axis="x", colors="white")
-        self.axes.tick_params(axis="y", colors="white")
-
-        super().__init__(self.fig)
-        self.pd_df = {'IDimage':[],'image':[],'coord':[]}
-        self.pts = self.axes.scatter([], [])
-        self.napari_viewer = None
-        self.selector = SelectFromCollection(self, self.axes, self.pts,self.pd_df, self.napari_viewer)
-        self.reset()
-
-    def draw_rectangle(self, eclick, erelease):
-        """eclick and erelease are the press and release events"""
-        x0, y0 = eclick.xdata, eclick.ydata
-        x1, y1 = erelease.xdata, erelease.ydata
-        self.xys = self.pts.get_offsets()
-        min_x = min(x0, x1)
-        max_x = max(x0, x1)
-        min_y = min(y0, y1)
-        max_y = max(y0, y1)
-        self.rect_ind_mask = [
-            min_x <= x <= max_x and min_y <= y <= max_y
-            for x, y in zip(self.xys[:, 0], self.xys[:, 1])
-        ]
-        if self.manual_clustering_method is not None:
-            self.manual_clustering_method(self.rect_ind_mask)
-
-    def reset(self):
-        self.axes.clear()
-        self.is_pressed = None
 
 def PolyArea2D(pts):
     lines = np.hstack([pts,np.roll(pts,-1,axis=0)])
@@ -327,6 +219,9 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         print("Search task failed")
 
     if os.path.isfile(ilastik_path):
+        root_pc = str(pathlib.Path.home()).split("\\")[0]+"\\Program Files"
+        check_version = [ix for ix in os.listdir(root_pc) if ix.find('ilastik')!=-1][0]
+        path_to_ilastik = os.path.join(root_pc,check_version,"ilastik.exe")
         print(f"{ix} found")
     else:
         print("ilastik.exe not found in :",fpath)
@@ -349,6 +244,10 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     if s!=len(abs_path_image_h5):
         sub_list_h5.append(A_list_h5)
     
+    #ilasitk path
+    
+
+    
     start_time = time.time()
     queueLock = threading.Lock()
     workQueue = queue.Queue(10)
@@ -361,7 +260,7 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
         list_to_work = sub_list_h5[iy]
         for path_ix in range(len(list_to_work)):
             im_h5 = list_to_work[path_ix]
-            thread = MyProcess(im_h5,filename2,workQueue)
+            thread = MyProcess(im_h5,filename2,path_to_ilastik,workQueue)
             thread.start()
             threads_list.append(thread)
 
@@ -719,6 +618,25 @@ def save_modification(image_seg : napari.layers.Labels, image_raw : ImageData, n
     path_to_data_label = os.path.join(zip_dir.name,directory_tmp,lettre,name_label)
     os.remove(path_to_data_label)
     imsave(path_to_data_label, img_as_uint(data_label))
+    
+def find_imagej_exe(os_environment='USERPROFILE'):
+    user_environment = os.environ[os_environment]
+    for ix in os.listdir(user_environment):
+        path_temp_ix = os.path.join(user_environment,ix)
+        if os.path.isdir(path_temp_ix):
+            try:
+                for iy in os.listdir(path_temp_ix):
+                    file_path = os.path.join(path_temp_ix,iy)
+                    if os.path.isfile(file_path):
+                        _,extension = os.path.splitext(iy)
+                        string_with_lowercase = (iy.lower())
+                        if string_with_lowercase.find('fiji')!=-1 or string_with_lowercase.find('imagej')!=-1:
+                            if extension=='.exe':
+                                return file_path
+            except:
+                pass
+    return ''
+
 
 @magic_factory(call_button="Run classification",filename={"label": "Ilastik Object classification:"})
 def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path.cwd()):
@@ -726,8 +644,14 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
     folder_in_temp = os.listdir(temp_file)[0]
     path_to_folder = os.path.join(temp_file,folder_in_temp,'')
     
-    subprocess.run(['C:/Users/User/Fiji.app/ImageJ-win64.exe','--headless','--console','-macro','C:/Users/User/RunBatch.ijm',path_to_folder])
+    run_batch_path = os.path.join(paths.get_models_dir(),'RunBatch.ijm')
     
+    # Reminder : Install Fiji in your user space C:\Users\[your name]\ImageJ2.app
+    path_to_image_exe = find_imagej_exe()
+    if len(path_to_image_exe)!=0:
+        subprocess.run([path_to_image_exe,'--headless','--console','-macro',run_batch_path,path_to_folder])
+    else:
+        print('ERROR : EXECUTABLE IMAGEJ NOT FOUND IN USER ENVIRONMENT')
     RAW_H5 = []
     SEG_H5 = []
     for ix in os.listdir(path_to_folder):
@@ -771,13 +695,17 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
     
     class_path_ilastik = str(filename)
     
+    root_pc = str(pathlib.Path.home()).split("\\")[0]+"\\Program Files"
+    check_version = [ix for ix in os.listdir(root_pc) if ix.find('ilastik')!=-1][0]
+    path_to_ilastik = os.path.join(root_pc,check_version,"ilastik.exe")
+    
     SEG = []
     threads_list = []
     for iy in tqdm(range(len(sub_list_h5)), desc= 'PROCESSING'):
         list_sub_h5_to_work = sub_list_h5[iy]
         for path_ix in list_sub_h5_to_work:
             elements_of_file = dico_obj_class[path_ix]
-            thread = MyProcess_classification(elements_of_file,class_path_ilastik,workQueue)
+            thread = MyProcess_classification(elements_of_file,class_path_ilastik,path_to_ilastik,workQueue)
             thread.start()
             threads_list.append(thread)
 
