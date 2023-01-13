@@ -793,12 +793,13 @@ def process_function_classification(napari_viewer : Viewer,filename=pathlib.Path
             cty = []
             id_obj = []
             id_img = []
+            size_img = []
             for idx in range(len(DATA_FRAME)):
                 pd_class = pd_class + DATA_FRAME[idx]['Predicted Class'].values.tolist()
                 cty = cty + DATA_FRAME[idx]['Country'].values.tolist()
                 id_obj = id_obj + DATA_FRAME[idx]['ID'].values.tolist()
                 id_img = id_img + DATA_FRAME[idx]['Image'].values.tolist()
-                
+                size_img = size_img + DATA_FRAME[idx]['Size in pixels'].values.tolist()
             dico_final = {"Country":cty,"Image":id_img,"ID object":id_obj,"Class":pd_class}
             df_final = pd.DataFrame(dico_final)
             filename, _ = QFileDialog.getSaveFileName(save_button, "Export", ".", "*.csv")
