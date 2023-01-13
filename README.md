@@ -111,6 +111,8 @@ This widget is a tool to classify segmented images. It takes as input an ilastik
 
 ![object_classification](https://user-images.githubusercontent.com/93375163/212312805-386b12f2-11ea-4fae-b41c-5608cefd99c4.png)
 
+**User conduct :** In this widget, the user corrects mispredicted labels in the table at the bottom right. He does not forget to save his correction with the Save button.
+When the user has finished with all his images, he uses the Export button to import a quantitative table. This table contains for each image, the name of the aphid type and its size in pixels.
 
 ## Contributing
 
