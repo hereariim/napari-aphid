@@ -54,7 +54,6 @@ import re
 import h5py
 
 import napari_aphid.path as paths
-from collections import Counter
 from pandas import DataFrame
 import shutil
 import matplotlib.cm as cm
@@ -306,7 +305,6 @@ def process_function_segmentation(napari_viewer : Viewer,filename=pathlib.Path.c
     print(SEG)
 
     # ICI, ON CREE DEUX CLASSES ET ON REMPLI LES TROUS
-    from collections import Counter
     from skimage.util import img_as_ubyte
     from skimage import io
 
