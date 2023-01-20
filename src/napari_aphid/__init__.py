@@ -1,4 +1,4 @@
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 from ._widget import process_function_segmentation, save_modification, process_function_classification
 
