@@ -1,5 +1,5 @@
-from tkinter import Image
-from tkinter.ttk import Progressbar
+# from tkinter import Image
+# from tkinter.ttk import Progressbar
 from tifffile import imsave
 import skimage
 from skimage.io import imread, imshow, imread_collection, concatenate_images
@@ -51,7 +51,6 @@ import tempfile
 from zipfile import ZipFile
 
 import re
-import PIL
 import h5py
 
 import napari_aphid.path as paths
