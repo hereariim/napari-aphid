@@ -2,6 +2,7 @@
 
 [![License BSD-3](https://img.shields.io/pypi/l/napari-aphid.svg?color=green)](https://github.com/hereariim/napari-aphid/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/napari-aphid.svg?color=green)](https://pypi.org/project/napari-aphid)
+[![Downloads](https://static.pepy.tech/badge/napari-aphid)](https://pepy.tech/project/napari-aphid)
 [![Python Version](https://img.shields.io/pypi/pyversions/napari-aphid.svg?color=green)](https://python.org)
 [![tests](https://github.com/hereariim/napari-aphid/workflows/tests/badge.svg)](https://github.com/hereariim/napari-aphid/actions)
 [![codecov](https://codecov.io/gh/hereariim/napari-aphid/branch/main/graph/badge.svg)](https://codecov.io/gh/hereariim/napari-aphid)
