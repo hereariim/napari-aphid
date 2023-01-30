@@ -7,7 +7,7 @@ setup(
     author_email="herearii.metuarea@gmail.com",
     name='napari-aphid', 
     description='A plugin to classify aphids by stage of development.',  
-    version="1.1.4",    
+    version="1.1.5",    
     long_description=long_description, 
     long_description_content_type="text/markdown",  
     url='https://github.com/hereariim/napari-aphid', 
