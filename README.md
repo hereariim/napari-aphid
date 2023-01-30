@@ -8,8 +8,6 @@
 [![codecov](https://codecov.io/gh/hereariim/napari-aphid/branch/main/graph/badge.svg)](https://codecov.io/gh/hereariim/napari-aphid)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-aphid)](https://napari-hub.org/plugins/napari-aphid)
 
-A plugin to classify aphids by stage of development.
-
 ----------------------------------
 
 This [napari] plugin was generated with [Cookiecutter] using [@napari]'s [cookiecutter-napari-plugin] template.
@@ -21,6 +19,8 @@ https://github.com/napari/cookiecutter-napari-plugin#getting-started
 and review the napari docs for plugin developers:
 https://napari.org/stable/plugins/index.html
 -->
+
+The plugin is still in development. Some issues must be fixed.
 
 ## Installation
 
